@@ -14,6 +14,9 @@
 #include "VkBootstrap.h"
 #include "vk_images.h"
 
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
+
 constexpr bool bUseValidationLayers = true;
 VulkanEngine* loadedEngine = nullptr;
 
@@ -103,6 +106,19 @@ void VulkanEngine::init_vulkan()
     // use vkbootstrap to get a Graphics queue
     _graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
     _graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
+
+    // initialize the memory allocator
+    VmaAllocatorCreateInfo allocatorInfo = {};
+    allocatorInfo.physicalDevice = _chosenGPU;
+    allocatorInfo.device = _device;
+    allocatorInfo.instance = _instance;
+    allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    vmaCreateAllocator(&allocatorInfo, &_allocator);
+
+    _mainDeletionQueue.push_function([&]() {
+        vmaDestroyAllocator(_allocator);
+        });
+
 }
 
 
@@ -200,7 +216,11 @@ void VulkanEngine::cleanup()
             vkDestroyFence(_device, _frames[i]._renderFence, nullptr);
             vkDestroySemaphore(_device, _frames[i]._renderSemaphore, nullptr);
             vkDestroySemaphore(_device, _frames[i]._swapchainSemaphore, nullptr);
+
+            _frames[i]._deletionQueue.flush();
         }
+        //flush the global deletion queue
+        _mainDeletionQueue.flush();
 
         destroy_swapchain();
 
@@ -222,6 +242,10 @@ void VulkanEngine::draw()
     // wait until the gpu has finished rendering the last frame. Timeout of 1
     // second
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
+
+    //the second time you run this frame
+    get_current_frame()._deletionQueue.flush();
+
     VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence));
 
     //request image from the swapchain
