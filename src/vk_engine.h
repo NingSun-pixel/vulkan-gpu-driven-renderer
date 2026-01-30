@@ -59,6 +59,8 @@ public:
 	//run main loop
 	void run();
 
+	void draw_background(VkCommandBuffer cmd);
+
 	// --- omitted ---
 
 	VkInstance _instance;// Vulkan library handle
@@ -83,6 +85,10 @@ public:
 	uint32_t _graphicsQueueFamily;
 
 	DeletionQueue _mainDeletionQueue;
+
+	//draw resources
+	AllocatedImage _drawImage;
+	VkExtent2D _drawExtent;
 private:
 	void init_vulkan();
 	void init_swapchain();
