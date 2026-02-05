@@ -4,6 +4,7 @@
 #pragma once
 
 #include <vk_types.h>
+#include <vk_descriptors.h>
 
 struct DeletionQueue
 {
@@ -47,8 +48,21 @@ public:
 
 	static VulkanEngine& Get();
 
+	//allocate Pool
+	DescriptorAllocator globalDescriptorAllocator;
+
+	//get mode
+	VkDescriptorSetLayout _drawImageDescriptorLayout;
+
+	//get actual memories
+	VkDescriptorSet _drawImageDescriptors;
+
+	VkPipeline _gradientPipeline;
+	VkPipelineLayout _gradientPipelineLayout;
+
 	//initializes everything in the engine
 	void init();
+
 
 	//shuts down the engine
 	void cleanup();
@@ -90,10 +104,15 @@ public:
 	AllocatedImage _drawImage;
 	VkExtent2D _drawExtent;
 private:
+	void init_descriptors();
+	void init_pipelines();
+	void init_background_pipelines();
 	void init_vulkan();
 	void init_swapchain();
 	void init_commands();
 	void init_sync_structures();
 	void create_swapchain(uint32_t width, uint32_t height);
 	void destroy_swapchain();
+
+
 };
