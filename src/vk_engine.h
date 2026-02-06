@@ -103,6 +103,15 @@ public:
 	//draw resources
 	AllocatedImage _drawImage;
 	VkExtent2D _drawExtent;
+
+	// immediate submit structures
+	VkFence _immFence;
+	VkCommandBuffer _immCommandBuffer;
+	VkCommandPool _immCommandPool;
+
+	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
+	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
+
 private:
 	void init_descriptors();
 	void init_pipelines();
@@ -114,5 +123,5 @@ private:
 	void create_swapchain(uint32_t width, uint32_t height);
 	void destroy_swapchain();
 
-
+	void init_imgui();
 };
