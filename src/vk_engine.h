@@ -13,6 +13,14 @@ struct ComputePushConstants {
 	glm::vec4 data4;
 };
 
+struct ComputeEffect {
+	const char* name;
+
+	VkPipeline pipeline;
+	VkPipelineLayout layout;
+
+	ComputePushConstants data;
+};
 
 struct DeletionQueue
 {
@@ -116,6 +124,9 @@ public:
 	VkFence _immFence;
 	VkCommandBuffer _immCommandBuffer;
 	VkCommandPool _immCommandPool;
+
+	std::vector<ComputeEffect> backgroundEffects;
+	int currentBackgroundEffect{ 0 };
 
 	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
 	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
