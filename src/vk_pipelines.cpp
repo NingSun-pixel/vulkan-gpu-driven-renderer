@@ -121,6 +121,18 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device)
     dynamicInfo.dynamicStateCount = 2;
 
     pipelineInfo.pDynamicState = &dynamicInfo;
+
+    // its easy to error out on create graphics pipeline, so we handle it a bit
+    // better than the common VK_CHECK case
+    VkPipeline newPipeline;
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo,
+            nullptr, &newPipeline)
+        != VK_SUCCESS) {
+        fmt::println("failed to create pipeline");
+        return VK_NULL_HANDLE; // failed to create graphics pipeline
+    } else {
+        return newPipeline;
+    }
 }
 
 void PipelineBuilder::set_shaders(VkShaderModule vertexShader, VkShaderModule fragmentShader)

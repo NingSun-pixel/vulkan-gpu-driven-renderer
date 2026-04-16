@@ -76,6 +76,9 @@ public:
 	VkPipeline _gradientPipeline;
 	VkPipelineLayout _gradientPipelineLayout;
 
+	VkPipelineLayout _trianglePipelineLayout;
+	VkPipeline _trianglePipeline;
+
 	//initializes everything in the engine
 	void init();
 
@@ -90,6 +93,8 @@ public:
 	void run();
 
 	void draw_background(VkCommandBuffer cmd);
+
+	void draw_geometry(VkCommandBuffer cmd);
 
 	// --- omitted ---
 
@@ -133,6 +138,7 @@ public:
 
 private:
 	void init_descriptors();
+	void init_triangle_pipeline();
 	void init_pipelines();
 	void init_background_pipelines();
 	void init_vulkan();
