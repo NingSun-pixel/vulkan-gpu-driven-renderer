@@ -860,6 +860,13 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
 	vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
 
+    push_constants.vertexBuffer = testMeshes[2]->meshBuffers.vertexBufferAddress;
+
+    vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
+    vkCmdBindIndexBuffer(cmd, testMeshes[2]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+    vkCmdDrawIndexed(cmd, testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
+
 	vkCmdEndRendering(cmd);
 }
 
@@ -1060,5 +1067,8 @@ void VulkanEngine::init_default_data() {
         destroy_buffer(rectangle.indexBuffer);
         destroy_buffer(rectangle.vertexBuffer);
         });
+
+    testMeshes = loadGltfMeshes(this, "..\\..\\assets\\basicmesh.glb").value();
+
 
 }
