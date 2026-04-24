@@ -80,6 +80,7 @@ public:
 	VkPipelineLayout _trianglePipelineLayout;
 	VkPipeline _trianglePipeline;
 
+	bool resize_requested;
 	//initializes everything in the engine
 	void init();
 
@@ -126,7 +127,7 @@ public:
 	AllocatedImage _drawImage;
 	AllocatedImage _depthImage;
 	VkExtent2D _drawExtent;
-
+	float renderScale = 1.f;
 	// immediate submit structures
 	VkFence _immFence;
 	VkCommandBuffer _immCommandBuffer;
@@ -147,6 +148,7 @@ public:
 
 	GPUMeshBuffers rectangle;
 
+
 	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
 
 	void init_mesh_pipeline();
@@ -157,6 +159,7 @@ private:
 	void init_background_pipelines();
 	void init_vulkan();
 	void init_swapchain();
+	void resize_swapchain();
 	void init_commands();
 	void init_sync_structures();
 	void create_swapchain(uint32_t width, uint32_t height);
