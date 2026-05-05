@@ -384,7 +384,7 @@ void VulkanEngine::init_triangle_pipeline()
     //no multisampling
     pipelineBuilder.set_multisampling_none();
     //no blending
-    pipelineBuilder.enable_blending_additive();
+    pipelineBuilder.disable_blending();
     //no depth testing
     pipelineBuilder.disable_depthtest();
 
@@ -457,7 +457,7 @@ void VulkanEngine::init_mesh_pipeline()
     //no multisampling
     pipelineBuilder.set_multisampling_none();
     //no blending
-    pipelineBuilder.enable_blending_additive();
+    pipelineBuilder.enable_blending_alphablend();
     //no depth testing
     //pipelineBuilder.disable_depthtest();
     pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
@@ -925,12 +925,14 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
 	GPUDrawPushConstants push_constants;
 	push_constants.worldMatrix = glm::mat4{ 1.f };
-	push_constants.vertexBuffer = rectangle.vertexBufferAddress;
 
-	vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
-	vkCmdBindIndexBuffer(cmd, rectangle.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+    //background retangle
+	//push_constants.vertexBuffer = rectangle.vertexBufferAddress;
 
-	vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+	//vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
+	//vkCmdBindIndexBuffer(cmd, rectangle.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+	//vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
 
     push_constants.vertexBuffer = testMeshes[2]->meshBuffers.vertexBufferAddress;
 
@@ -1185,7 +1187,7 @@ void VulkanEngine::init_default_data() {
     _greyImage = create_image((void*)&grey, VkExtent3D{ 1, 1, 1 }, VK_FORMAT_R8G8B8A8_UNORM,
         VK_IMAGE_USAGE_SAMPLED_BIT);
 
-    uint32_t black = glm::packUnorm4x8(glm::vec4(0, 0, 0, 0));
+    uint32_t black = glm::packUnorm4x8(glm::vec4(0, 0, 0, 1));
     _blackImage = create_image((void*)&black, VkExtent3D{ 1, 1, 1 }, VK_FORMAT_R8G8B8A8_UNORM,
         VK_IMAGE_USAGE_SAMPLED_BIT);
 
@@ -1194,7 +1196,7 @@ void VulkanEngine::init_default_data() {
     std::array<uint32_t, 16 * 16 > pixels; //for 16x16 checkerboard texture
     for (int x = 0; x < 16; x++) {
         for (int y = 0; y < 16; y++) {
-            pixels[y * 16 + x] = ((x % 2) ^ (y % 2)) ? magenta : black;
+            pixels[y * 16 + x] = ((x % 2) ^ (y % 2)) ? magenta : white;
         }
     }
     _errorCheckerboardImage = create_image(pixels.data(), VkExtent3D{ 16, 16, 1 }, VK_FORMAT_R8G8B8A8_UNORM,
