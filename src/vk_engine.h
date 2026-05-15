@@ -6,6 +6,7 @@
 #include <vk_types.h>
 #include <vk_descriptors.h>
 #include <vk_loader.h>
+#include <camera.h>
 
 struct ComputePushConstants {
 	glm::vec4 data1;
@@ -125,6 +126,8 @@ struct MeshNode : public Node {
 
 class VulkanEngine {
 public:
+
+	Camera mainCamera;
 	VmaAllocator _allocator;
 
 	bool _isInitialized{ false };
