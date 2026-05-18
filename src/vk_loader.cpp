@@ -310,9 +310,10 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
     std::vector<uint32_t> indices;
     std::vector<Vertex> vertices;
     for (fastgltf::Mesh& mesh : gltf.meshes) {
-        MeshAsset newmesh;
-
-        newmesh.name = mesh.name;
+        std::shared_ptr<MeshAsset> newmesh = std::make_shared<MeshAsset>();
+        meshes.push_back(newmesh);
+        file.meshes[mesh.name.c_str()] = newmesh;
+        newmesh->name = mesh.name;
 
         // clear the mesh arrays each mesh, we dont want to merge them by error
         indices.clear();
@@ -389,8 +390,9 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
             else {
                 newSurface.material = materials[0];
             }
-            newmesh.surfaces.push_back(newSurface);
+            newmesh->surfaces.push_back(newSurface);
         }
+        newmesh->meshBuffers = engine->uploadMesh(indices, vertices);
     }
 
     // load all nodes and their meshes
