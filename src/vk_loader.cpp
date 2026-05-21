@@ -448,18 +448,6 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
         }
     }
     return scene;
-    //// display the vertex normals
-    //constexpr bool OverrideColors = false;
-    //if (OverrideColors) {
-    //    for (Vertex& vtx : vertices) {
-    //        vtx.color = glm::vec4(vtx.normal, 1.f);
-    //    }
-    //}
-    //newmesh.meshBuffers = engine->uploadMesh(indices, vertices);
-
-    //file.meshes[newmesh.name] = std::make_shared<MeshAsset>(std::move(newmesh));
-    //std::string name = newmesh.name;
-    //file.meshes.emplace(std::move(name),std::make_shared<MeshAsset>(std::move(newmesh)));
 }
 
 

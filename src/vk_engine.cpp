@@ -23,11 +23,40 @@
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_vulkan.h"
+#include <iostream>
 
 constexpr bool bUseValidationLayers = true;
 VulkanEngine* loadedEngine = nullptr;
 
 VulkanEngine& VulkanEngine::Get() { return *loadedEngine; }
+
+// 在文件顶部，或者放在某个 .cpp 里作为静态函数
+static VKAPI_ATTR VkBool32 VKAPI_CALL my_debug_callback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT type,
+    const VkDebugUtilsMessengerCallbackDataEXT* data,
+    void* userData)
+{
+    if (severity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+        return VK_FALSE;
+
+    const char* tag = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+        ? "\033[91m[ERROR]\033[0m"
+        : "\033[93m[WARN ]\033[0m";
+
+    std::cerr << tag << " "
+        << (data->pMessageIdName ? data->pMessageIdName : "")
+        << "\n  " << data->pMessage << "\n\n";
+
+    if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+#ifdef _WIN32
+        __debugbreak();
+#endif
+    }
+
+    return VK_FALSE;
+}
+
 void VulkanEngine::init()
 {
     // only one engine initialization is allowed with the application.
@@ -86,7 +115,11 @@ void VulkanEngine::init_vulkan()
     //make the vulkan instance, with basic debug features
     auto inst_ret = builder.set_app_name("Example Vulkan Application")
         .request_validation_layers(bUseValidationLayers)
-        .use_default_debug_messenger()
+        .set_debug_callback(my_debug_callback)        // ← 改这里！
+        .set_debug_messenger_severity(
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT
+        )                                              // ← 顺便加这个，让 vkb 也帮你过滤
         .require_api_version(1, 3, 0)
         .build();
 
