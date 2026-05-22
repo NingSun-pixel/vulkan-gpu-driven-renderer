@@ -30,7 +30,7 @@ VulkanEngine* loadedEngine = nullptr;
 
 VulkanEngine& VulkanEngine::Get() { return *loadedEngine; }
 
-// 在文件顶部，或者放在某个 .cpp 里作为静态函数
+
 static VKAPI_ATTR VkBool32 VKAPI_CALL my_debug_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity,
     VkDebugUtilsMessageTypeFlagsEXT type,
@@ -50,7 +50,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL my_debug_callback(
 
     if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
 #ifdef _WIN32
-        __debugbreak();
+        //__debugbreak();
 #endif
     }
 
@@ -1018,8 +1018,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
     //vkCmdDrawIndexed(cmd, testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
 #pragma endregion
-    for (const RenderObject& draw : mainDrawContext.OpaqueSurfaces) {
-
+    auto draw = [&](const RenderObject& draw) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 1, 1, &draw.material->materialSet, 0, nullptr);
@@ -1032,10 +1031,35 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
 
         vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, 0);
+        };
+
+    for (auto& r : mainDrawContext.OpaqueSurfaces) {
+        draw(r);
     }
+
+    for (auto& r : mainDrawContext.TransparentSurfaces) {
+        draw(r);
+    }
+    //for (const RenderObject& draw : mainDrawContext.OpaqueSurfaces) {
+
+    //    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline);
+    //    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
+    //    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 1, 1, &draw.material->materialSet, 0, nullptr);
+
+    //    vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    //    GPUDrawPushConstants pushConstants;
+    //    pushConstants.vertexBuffer = draw.vertexBufferAddress;
+    //    pushConstants.worldMatrix = draw.transform;
+    //    vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
+
+    //    vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, 0);
+    //}
 
 	vkCmdEndRendering(cmd);
 
+    mainDrawContext.OpaqueSurfaces.clear();
+    mainDrawContext.TransparentSurfaces.clear();
 
 }
 
