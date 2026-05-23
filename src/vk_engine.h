@@ -124,10 +124,18 @@ struct MeshNode : public Node {
 	virtual void Draw(const glm::mat4& topMatrix, DrawContext& ctx) override;
 };
 
+struct EngineStats {
+	float frametime_CPU;
+	int triangle_count;
+	int drawcall_count;
+	float scene_update_time_CPU;
+	float mesh_draw_time_CPU;
+};
+
 
 class VulkanEngine {
 public:
-
+	EngineStats stats;
 	Camera mainCamera;
 	VmaAllocator _allocator;
 

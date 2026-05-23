@@ -921,6 +921,11 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd)
 
 void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 {
+    //reset counters
+    stats.drawcall_count = 0;
+    stats.triangle_count = 0;
+    //begin clock
+    auto start = std::chrono::system_clock::now();
     //begin a render pass  connected to our draw image
     VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo depthAttachment = vkinit::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
@@ -1031,6 +1036,9 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
 
         vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, 0);
+        //add counters for triangles and draws
+        stats.drawcall_count++;
+        stats.triangle_count += draw.indexCount / 3;
         };
 
     for (auto& r : mainDrawContext.OpaqueSurfaces) {
@@ -1061,6 +1069,11 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     mainDrawContext.OpaqueSurfaces.clear();
     mainDrawContext.TransparentSurfaces.clear();
 
+    auto end = std::chrono::system_clock::now();
+
+    //convert to microseconds (integer), and then come back to miliseconds
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    stats.mesh_draw_time_CPU = elapsed.count() / 1000.f;
 }
 
 void VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function)
@@ -1172,6 +1185,9 @@ void VulkanEngine::run()
 
     // main loop
     while (!bQuit) {
+        //begin clock
+        auto start = std::chrono::system_clock::now();
+
         SDL_Event e;
         bool bQuit = false;
 
@@ -1211,6 +1227,16 @@ void VulkanEngine::run()
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
+        ImGui::Begin("Stats");
+
+        ImGui::Text("frametime %f ms", stats.frametime_CPU);
+        ImGui::Text("draw time %f ms", stats.mesh_draw_time_CPU);
+        ImGui::Text("update time %f ms", stats.scene_update_time_CPU);
+        ImGui::Text("triangles %i", stats.triangle_count);
+        ImGui::Text("draws %i", stats.drawcall_count);
+
+        ImGui::End();
+
         if (ImGui::Begin("background")) {
             ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
             ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
@@ -1231,6 +1257,13 @@ void VulkanEngine::run()
         //our draw function
 
         draw();
+
+        //get clock again, compare with start clock
+        auto end = std::chrono::system_clock::now();
+
+        //convert to microseconds (integer), and then come back to miliseconds
+        auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        stats.frametime_CPU = elapsed.count() / 1000.f;
     }
 }
 
