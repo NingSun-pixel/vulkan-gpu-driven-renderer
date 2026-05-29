@@ -117,7 +117,24 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
                         vertices[initial_vtx + index].color = v;
                     });
             }
+
+            //code that writes vertex buffers
+
+            //loop the vertices of this surface, find min/max bounds
+            glm::vec3 minpos = vertices[initial_vtx].position;
+            glm::vec3 maxpos = vertices[initial_vtx].position;
+            for (int i = initial_vtx; i < vertices.size(); i++) {
+                minpos = glm::min(minpos, vertices[i].position);
+                maxpos = glm::max(maxpos, vertices[i].position);
+            }
+
+            // calculate origin and extents from the min/max, use extent lenght for radius
+            newSurface.bounds.origin = (maxpos + minpos) / 2.f;
+            newSurface.bounds.extents = (maxpos - minpos) / 2.f;
+            newSurface.bounds.sphereRadius = glm::length(newSurface.bounds.extents);
             newmesh.surfaces.push_back(newSurface);
+
+
         }
 
         // display the vertex normals
@@ -205,7 +222,7 @@ std::optional<AllocatedImage> load_image(VulkanEngine* engine, fastgltf::Asset& 
                     imagesize.height = height;
                     imagesize.depth = 1;
 
-                    newImage = engine->create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT,false);
+                    newImage = engine->create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT,true);
 
                     stbi_image_free(data);
                 }
@@ -542,6 +559,9 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
             node->refreshTransform(glm::mat4{ 1.f });
         }
     }
+
+
+
     return scene;
 }
 
