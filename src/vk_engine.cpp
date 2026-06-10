@@ -79,6 +79,10 @@ bool is_visible(const RenderObject& obj, const glm::mat4& viewproj) {
         // project each corner into clip space
         glm::vec4 v = matrix * glm::vec4(obj.bounds.origin + (corners[c] * obj.bounds.extents), 1.f);
 
+        if (v.w <= 0)
+        {
+            return true;
+        }
         // perspective correction
         v.x = v.x / v.w;
         v.y = v.y / v.w;
@@ -571,6 +575,7 @@ void VulkanEngine::init_mesh_pipeline()
 
 }
 
+//skybox
 void VulkanEngine::init_background_pipelines()
 {
     //pipeline layout code
@@ -589,35 +594,6 @@ void VulkanEngine::init_background_pipelines()
     computeLayout.pushConstantRangeCount = 1;
 
     VK_CHECK(vkCreatePipelineLayout(_device, &computeLayout, nullptr, &_gradientPipelineLayout));
-
-    ////real pipeline code(compute pipeline)
-    //VkShaderModule computeDrawShader;
-    //if (!vkutil::load_shader_module("C:/Proj/vulkan-guide/shaders/gradient_color.comp.spv", _device, &computeDrawShader))
-    //{
-    //    fmt::print("Error when building the compute shader \n");
-    //}
-
-    //VkPipelineShaderStageCreateInfo stageinfo{};
-    //stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    //stageinfo.pNext = nullptr;
-    //stageinfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    //stageinfo.module = computeDrawShader;
-    //stageinfo.pName = "main";
-
-    //VkComputePipelineCreateInfo computePipelineCreateInfo{};
-    //computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    //computePipelineCreateInfo.pNext = nullptr;
-    //computePipelineCreateInfo.layout = _gradientPipelineLayout;
-    //computePipelineCreateInfo.stage = stageinfo;
-
-    //VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &_gradientPipeline));
-
-    //vkDestroyShaderModule(_device, computeDrawShader, nullptr);
-
-    //_mainDeletionQueue.push_function([&]() {
-    //    vkDestroyPipelineLayout(_device, _gradientPipelineLayout, nullptr);
-    //    vkDestroyPipeline(_device, _gradientPipeline, nullptr);
-    //    });
 
     VkShaderModule gradientShader;
     if (!vkutil::load_shader_module("../../shaders/gradient_color.comp.spv", _device, &gradientShader)) {
@@ -934,6 +910,7 @@ void VulkanEngine::draw()
 
 }
 
+//skybox
 void VulkanEngine::draw_background(VkCommandBuffer cmd)
 {
     //1.
@@ -998,8 +975,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
     vkCmdBeginRendering(cmd, &renderInfo);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
-
     //set dynamic viewport and scissor
     VkViewport viewport = {};
     viewport.x = 0;
@@ -1018,9 +993,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     scissor.extent.height = _drawExtent.height;
 
     vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-    //launch a draw command to draw 3 vertices
-	vkCmdDraw(cmd, 3, 1, 0, 0);
 
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
 
@@ -1562,10 +1534,6 @@ void VulkanEngine::update_scene()
 
     // camera projection
     glm::mat4 projection = glm::perspective(glm::radians(70.f), (float)_windowExtent.width / (float)_windowExtent.height, 10000.f, 0.1f);
-
-    // invert the Y direction on projection matrix so that we are more similar
-    // to opengl and gltf axis
-    projection[1][1] *= -1;
 
     mainDrawContext.OpaqueSurfaces.clear();
 
