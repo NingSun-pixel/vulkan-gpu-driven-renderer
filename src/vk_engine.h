@@ -117,6 +117,11 @@ struct GLTFMetallic_Roughness {
 	MaterialInstance write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
 };
 
+struct ObjectData {
+	glm::mat4 render_matrix;
+	VkDeviceAddress Vertex;
+};
+
 struct MeshNode : public Node {
 
 	std::shared_ptr<MeshAsset> mesh;
