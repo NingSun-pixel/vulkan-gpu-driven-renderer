@@ -25,7 +25,7 @@
 #include "imgui_impl_vulkan.h"
 #include <iostream>
 
-constexpr bool bUseValidationLayers = false;
+constexpr bool bUseValidationLayers = true;
 VulkanEngine* loadedEngine = nullptr;
 
 VulkanEngine& VulkanEngine::Get() { return *loadedEngine; }
@@ -288,10 +288,11 @@ void VulkanEngine::init_descriptors()
     builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     _gpuSceneDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    //builder.clear();    // ← 加这一行
-
-    //builder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    //_singleImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
+    {
+        DescriptorLayoutBuilder builder;
+        builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);   // binding 0 = SSBO
+        _objectDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT);
+    }
 
     //create a descriptor pool that will hold 10 sets with 1 image each
     std::vector<DescriptorAllocator::PoolSizeRatio> sizes =
@@ -308,6 +309,9 @@ void VulkanEngine::init_descriptors()
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
         _drawImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
     }
+
+
+
 
     //allocate a descriptor set for our draw image
     _drawImageDescriptors = globalDescriptorAllocator.allocate(_device, _drawImageDescriptorLayout);
@@ -868,8 +872,32 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     MaterialInstance* lastMaterial = nullptr;
     VkBuffer lastIndexBuffer = VK_NULL_HANDLE;
 
+    std::vector<GPUObjectData> objects;
 
-    auto draw = [&](const RenderObject& r) {
+    objects.reserve(mainDrawContext.OpaqueSurfaces.size() + mainDrawContext.TransparentSurfaces.size());
+    for (auto& s : mainDrawContext.OpaqueSurfaces)      objects.push_back({ s.transform, s.vertexBufferAddress });
+    for (auto& s : mainDrawContext.TransparentSurfaces) objects.push_back({ s.transform, s.vertexBufferAddress });
+
+    // 4b. 建 SSBO
+    AllocatedBuffer objectBuffer = create_buffer(objects.size() * sizeof(GPUObjectData),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    get_current_frame()._deletionQueue.push_function([=, this]() { destroy_buffer(objectBuffer); });
+
+    // 4c. 填数据
+    memcpy(objectBuffer.allocation->GetMappedData(), objects.data(), objects.size() * sizeof(GPUObjectData));
+
+    // 4d. 分配 + 写描述符（set 2）
+    VkDescriptorSet objectDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _objectDataDescriptorLayout);
+    {
+        DescriptorWriter writer;
+        writer.write_buffer(0, objectBuffer.buffer, objects.size() * sizeof(GPUObjectData), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.update_set(_device, objectDescriptor);
+    }
+
+
+
+
+    auto draw = [&](const RenderObject& r, uint32_t objectIndex){
         if (r.material != lastMaterial) {
             lastMaterial = r.material;
             //rebind pipeline and descriptors if the material changed
@@ -877,6 +905,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
                 lastPipeline = r.material->pipeline;
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 2, 1, &objectDescriptor, 0, nullptr);
             }
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 1, 1, &r.material->materialSet, 0, nullptr);
         }
@@ -884,12 +913,12 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
             lastIndexBuffer = r.indexBuffer;
             vkCmdBindIndexBuffer(cmd, r.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         }
-        GPUDrawPushConstants pushConstants;
-        pushConstants.vertexBuffer = r.vertexBufferAddress;
-        pushConstants.worldMatrix = r.transform;
-        vkCmdPushConstants(cmd, r.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
+        //GPUDrawPushConstants pushConstants;
+        //pushConstants.vertexBuffer = r.vertexBufferAddress;
+        //pushConstants.worldMatrix = r.transform;
+        //vkCmdPushConstants(cmd, r.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
 
-        vkCmdDrawIndexed(cmd, r.indexCount, 1, r.firstIndex, 0, 0);
+        vkCmdDrawIndexed(cmd, r.indexCount, 1, r.firstIndex, 0, objectIndex);
 
         //add counters for triangles and draws
         stats.drawcall_count++;
@@ -897,27 +926,12 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         };
 
     for (auto& r : opaque_draws) {
-        draw(mainDrawContext.OpaqueSurfaces[r]);
+        draw(mainDrawContext.OpaqueSurfaces[r],r);
     }
 
-    for (auto& r : mainDrawContext.TransparentSurfaces) {
-        draw(r);
-    }
-    //for (const RenderObject& draw : mainDrawContext.OpaqueSurfaces) {
-
-    //    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline);
-    //    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
-    //    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 1, 1, &draw.material->materialSet, 0, nullptr);
-
-    //    vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-    //    GPUDrawPushConstants pushConstants;
-    //    pushConstants.vertexBuffer = draw.vertexBufferAddress;
-    //    pushConstants.worldMatrix = draw.transform;
-    //    vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
-
-    //    vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, 0);
-    //}
+    for (size_t j = 0; j < mainDrawContext.TransparentSurfaces.size(); j++)
+        draw(mainDrawContext.TransparentSurfaces[j],
+            mainDrawContext.OpaqueSurfaces.size() + j);      // transparent：接在 opaque 后面
 
 	vkCmdEndRendering(cmd);
 
@@ -1378,7 +1392,7 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
     }
 
     VkShaderModule meshVertexShader;
-    if (!vkutil::load_shader_module("../../shaders/mesh.vert.spv", engine->_device, &meshVertexShader)) {
+    if (!vkutil::load_shader_module("../../shaders/meshGPUDriven.vert.spv", engine->_device, &meshVertexShader)) {
         fmt::println("Error when building the triangle vertex shader module");
     }
 
@@ -1395,10 +1409,10 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
     materialLayout = layoutBuilder.build(engine->_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
     VkDescriptorSetLayout layouts[] = { engine->_gpuSceneDataDescriptorLayout,
-        materialLayout };
+        materialLayout,engine->_objectDataDescriptorLayout };
 
     VkPipelineLayoutCreateInfo mesh_layout_info = vkinit::pipeline_layout_create_info();
-    mesh_layout_info.setLayoutCount = 2;
+    mesh_layout_info.setLayoutCount = 3;
     mesh_layout_info.pSetLayouts = layouts;
     mesh_layout_info.pPushConstantRanges = &matrixRange;
     mesh_layout_info.pushConstantRangeCount = 1;

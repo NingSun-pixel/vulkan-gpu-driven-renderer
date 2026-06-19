@@ -82,6 +82,12 @@ struct RenderObject {
 	VkDeviceAddress vertexBufferAddress;
 };
 
+struct GPUObjectData {
+	glm::mat4    render_matrix;
+	VkDeviceAddress vertexBuffer; 
+	uint64_t        _pad;            // 8  → 偏移 72，凑到 80
+};
+
 struct DrawContext {
 	std::vector<RenderObject> OpaqueSurfaces;
 	std::vector<RenderObject> TransparentSurfaces;
@@ -117,10 +123,6 @@ struct GLTFMetallic_Roughness {
 	MaterialInstance write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
 };
 
-struct ObjectData {
-	glm::mat4 render_matrix;
-	VkDeviceAddress Vertex;
-};
 
 struct MeshNode : public Node {
 
@@ -241,6 +243,7 @@ public:
 
 	GPUSceneData sceneData;
 
+	VkDescriptorSetLayout _objectDataDescriptorLayout;
 	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
 	VkDescriptorSetLayout _singleImageDescriptorLayout;
 
