@@ -72,8 +72,8 @@ constexpr unsigned int FRAME_OVERLAP = 2;
 
 
 struct RenderObject {
-	uint32_t indexCount;
 	uint32_t firstIndex;
+	uint32_t indexCount;
    	VkBuffer indexBuffer;
 
 	MaterialInstance* material;

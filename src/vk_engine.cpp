@@ -810,6 +810,10 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         const RenderObject& A = mainDrawContext.OpaqueSurfaces[iA];
         const RenderObject& B = mainDrawContext.OpaqueSurfaces[iB];
         if (A.material == B.material) {
+            if (A.indexBuffer == B.indexBuffer)
+            {
+                A.firstIndex < B.firstIndex;
+            }
             return A.indexBuffer < B.indexBuffer;
         }
         else {
@@ -900,6 +904,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     MaterialPipeline* lastPipeline = nullptr;
     MaterialInstance* lastMaterial = nullptr;
     VkBuffer lastIndexBuffer = VK_NULL_HANDLE;
+    uint32_t lastFirstIndex = -1;
 
     std::vector<GPUObjectData> objects;
 
@@ -923,10 +928,25 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         writer.update_set(_device, objectDescriptor);
     }
 
-    auto drawOpaqueInstance = [&](const RenderObject& r, uint32_t objectIndex) {
+
+    //既要和之前的比，又要和之后的比
+    //和之前的比，是为了少切换pipeline和少重新赋值
+    //和之后的比，是为了合批进行自动instance
+    const RenderObject* rep = nullptr;     // 当前批的代表物体（取 indexCount/firstIndex/material 等）
+    uint32_t batchStart = 0, batchCount = 0;
+
+    auto sameBatch = [](const RenderObject& a, const RenderObject& b) {
+        return a.material == b.material && a.indexBuffer == b.indexBuffer
+            && a.firstIndex == b.firstIndex && a.indexCount == b.indexCount;   // 同 surface
+        };
+
+
+    auto flush = [&]() {
+        if (batchCount == 0) return;
+        const RenderObject& r = *rep;
+        // —— bind material（保留你的 lastMaterial/lastPipeline 跳过逻辑）——
         if (r.material != lastMaterial) {
             lastMaterial = r.material;
-            //rebind pipeline and descriptors if the material changed
             if (r.material->pipeline != lastPipeline) {
                 lastPipeline = r.material->pipeline;
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
@@ -939,12 +959,24 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
             lastIndexBuffer = r.indexBuffer;
             vkCmdBindIndexBuffer(cmd, r.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         }
-        vkCmdDrawIndexed(cmd, r.indexCount, 1, r.firstIndex, 0, objectIndex);
-
-        //add counters for triangles and draws
+        vkCmdDrawIndexed(cmd, r.indexCount, batchCount, r.firstIndex, 0, batchStart);  // ← instanceCount=批大小, firstInstance=批头
         stats.drawcall_count++;
-        stats.triangle_count += r.indexCount / 3;
+        stats.triangle_count += (r.indexCount / 3) * batchCount;
         };
+    
+
+    for (size_t j = 0; j < opaque_draws.size() - 1; j++) {
+        const RenderObject& r = mainDrawContext.OpaqueSurfaces[opaque_draws[j]];
+        if (batchCount > 0 && sameBatch(*rep, r)) {
+            batchCount++;                       // 同批，数量+1
+        }
+        else {
+            flush();                            // 先画掉上一批
+            rep = &r; batchStart = j; batchCount = 1;   // 开新批
+        }
+    }
+
+    flush();   // ★ 别忘了最后一批
 
 
     auto drawTranparent = [&](const RenderObject& r, uint32_t objectIndex){
@@ -970,12 +1002,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         stats.triangle_count += r.indexCount / 3;
         };
 
-    for (size_t j = 0; j < opaque_draws.size(); j++) {
-        
-        //如果当前object和之前object是同一个，++
-        //不同，重新计数
-        drawOpaqueInstance(mainDrawContext.OpaqueSurfaces[opaque_draws[j]],j);
-    }
+
 
     for (size_t j = 0; j < mainDrawContext.TransparentSurfaces.size(); j++)
         drawTranparent(mainDrawContext.TransparentSurfaces[j],
