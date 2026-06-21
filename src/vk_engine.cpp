@@ -24,6 +24,7 @@
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_vulkan.h"
 #include <iostream>
+#include <set>
 
 constexpr bool bUseValidationLayers = true;
 VulkanEngine* loadedEngine = nullptr;
@@ -816,6 +817,34 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         }
         });
 
+
+    // ===== 临时统计：阶段2/3 能省多少 draw call（验证后删掉）=====
+    {
+        // 阶段2：相邻且 同material+同mesh → 一批（= instancing 后的 draw 数）
+        uint32_t batchCount = 0, curInst = 0, maxInst = 0;
+        MaterialInstance* lastMat = nullptr;
+        VkBuffer lastIdx = VK_NULL_HANDLE;
+        for (auto idx : opaque_draws) {
+            auto& r = mainDrawContext.OpaqueSurfaces[idx];
+            if (r.material != lastMat || r.indexBuffer != lastIdx) {
+                batchCount++; lastMat = r.material; lastIdx = r.indexBuffer; curInst = 1;
+            }
+            else {
+                curInst++;
+            }
+            maxInst = std::max(maxInst, curInst);
+        }
+        std::set<MaterialInstance*> mats;
+        for (auto idx : opaque_draws) mats.insert(mainDrawContext.OpaqueSurfaces[idx].material);
+
+        fmt::println("[STATS] opaque objects = {}", opaque_draws.size());
+        fmt::println("[STATS]2 batches(mat+mesh) = {}  (decline {:.1f}x, max instance number: {})",
+            batchCount, (float)opaque_draws.size() / batchCount, maxInst);
+        fmt::println("[STATS] 3 material number:      = {}  (decline {:.1f}x)",
+            mats.size(), (float)opaque_draws.size() / mats.size());
+    }
+
+
     //reset counters
     stats.drawcall_count = 0;
     stats.triangle_count = 0;
@@ -875,7 +904,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     std::vector<GPUObjectData> objects;
 
     objects.reserve(mainDrawContext.OpaqueSurfaces.size() + mainDrawContext.TransparentSurfaces.size());
-    for (auto& s : mainDrawContext.OpaqueSurfaces)      objects.push_back({ s.transform, s.vertexBufferAddress });
+    for (auto& s : opaque_draws)      objects.push_back({ mainDrawContext.OpaqueSurfaces[s].transform, mainDrawContext.OpaqueSurfaces[s].vertexBufferAddress});
     for (auto& s : mainDrawContext.TransparentSurfaces) objects.push_back({ s.transform, s.vertexBufferAddress });
 
     // 4b. 建 SSBO
@@ -894,10 +923,31 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         writer.update_set(_device, objectDescriptor);
     }
 
+    auto drawOpaqueInstance = [&](const RenderObject& r, uint32_t objectIndex) {
+        if (r.material != lastMaterial) {
+            lastMaterial = r.material;
+            //rebind pipeline and descriptors if the material changed
+            if (r.material->pipeline != lastPipeline) {
+                lastPipeline = r.material->pipeline;
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 2, 1, &objectDescriptor, 0, nullptr);
+            }
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 1, 1, &r.material->materialSet, 0, nullptr);
+        }
+        if (r.indexBuffer != lastIndexBuffer) {
+            lastIndexBuffer = r.indexBuffer;
+            vkCmdBindIndexBuffer(cmd, r.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        }
+        vkCmdDrawIndexed(cmd, r.indexCount, 1, r.firstIndex, 0, objectIndex);
+
+        //add counters for triangles and draws
+        stats.drawcall_count++;
+        stats.triangle_count += r.indexCount / 3;
+        };
 
 
-
-    auto draw = [&](const RenderObject& r, uint32_t objectIndex){
+    auto drawTranparent = [&](const RenderObject& r, uint32_t objectIndex){
         if (r.material != lastMaterial) {
             lastMaterial = r.material;
             //rebind pipeline and descriptors if the material changed
@@ -913,11 +963,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
             lastIndexBuffer = r.indexBuffer;
             vkCmdBindIndexBuffer(cmd, r.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         }
-        //GPUDrawPushConstants pushConstants;
-        //pushConstants.vertexBuffer = r.vertexBufferAddress;
-        //pushConstants.worldMatrix = r.transform;
-        //vkCmdPushConstants(cmd, r.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
-
         vkCmdDrawIndexed(cmd, r.indexCount, 1, r.firstIndex, 0, objectIndex);
 
         //add counters for triangles and draws
@@ -925,13 +970,16 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         stats.triangle_count += r.indexCount / 3;
         };
 
-    for (auto& r : opaque_draws) {
-        draw(mainDrawContext.OpaqueSurfaces[r],r);
+    for (size_t j = 0; j < opaque_draws.size(); j++) {
+        
+        //如果当前object和之前object是同一个，++
+        //不同，重新计数
+        drawOpaqueInstance(mainDrawContext.OpaqueSurfaces[opaque_draws[j]],j);
     }
 
     for (size_t j = 0; j < mainDrawContext.TransparentSurfaces.size(); j++)
-        draw(mainDrawContext.TransparentSurfaces[j],
-            mainDrawContext.OpaqueSurfaces.size() + j);      // transparent：接在 opaque 后面
+        drawTranparent(mainDrawContext.TransparentSurfaces[j],
+            opaque_draws.size() + j);      // transparent：接在 opaque 后面
 
 	vkCmdEndRendering(cmd);
 
