@@ -806,10 +806,15 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     std::vector<uint32_t> opaque_draws;
     opaque_draws.reserve(mainDrawContext.OpaqueSurfaces.size());
 
+
     for (int i = 0; i < mainDrawContext.OpaqueSurfaces.size(); i++) {
         if (is_visible(mainDrawContext.OpaqueSurfaces[i], sceneData.viewproj)) {
             opaque_draws.push_back(i);
         }
+    }
+
+    if (opaque_draws.empty()) {
+        return;
     }
 
     // sort the opaque surfaces by material and mesh
@@ -940,7 +945,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     //和之前的比，是为了少切换pipeline和少重新赋值
     //和之后的比，是为了合批进行自动instance
     const RenderObject* rep = nullptr;     // 当前批的代表物体（取 indexCount/firstIndex/material 等）
-    uint32_t batchStart = 0, instanceCount = 0;//firstindex = batchStart,指名当前是取GPUObject里哪个数据
+    uint32_t batchStart = 0, instanceCount = 1;//firstindex = batchStart,指名当前是取GPUObject里哪个数据
     //instanceCount 
 
     auto sameBatch = [](const RenderObject& a, const RenderObject& b) {
@@ -972,15 +977,15 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         stats.triangle_count += (r.indexCount / 3) * instanceCount;
         };
     
-
+    rep = &mainDrawContext.OpaqueSurfaces[opaque_draws[0]];
     for (size_t j = 0; j < opaque_draws.size() - 1; j++) {
-        const RenderObject& r = mainDrawContext.OpaqueSurfaces[opaque_draws[j]];
+        const RenderObject& r = mainDrawContext.OpaqueSurfaces[opaque_draws[j + 1]];
         if (instanceCount > 0 && sameBatch(*rep, r)) {
             instanceCount++;                       // 同批，数量+1
         }
         else {
             flush();                            // 先画掉上一批
-            rep = &r; batchStart = j; instanceCount = 1;   // 开新批
+            rep = &r; batchStart = j + 1; instanceCount = 1;   // 开新批
         }
     }
 
@@ -1454,7 +1459,7 @@ void VulkanEngine::update_scene()
     sceneData.ambientColor = glm::vec4(.1f);
     sceneData.sunlightColor = glm::vec4(1.f);
     sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
-
+  
 }
 
 void VulkanEngine::build_mega_index_buffer(std::vector<std::shared_ptr<MeshAsset>>& allMeshes) {
