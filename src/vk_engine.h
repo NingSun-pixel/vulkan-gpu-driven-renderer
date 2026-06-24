@@ -88,6 +88,11 @@ struct GPUObjectData {
 	uint64_t        _pad;            // 8  → 偏移 72，凑到 80
 };
 
+struct MatGroup { 
+	MaterialInstance* material; 
+	uint32_t cmdOffset, cmdCount;
+};
+
 struct DrawContext {
 	std::vector<RenderObject> OpaqueSurfaces;
 	std::vector<RenderObject> TransparentSurfaces;

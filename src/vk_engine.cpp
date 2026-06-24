@@ -804,6 +804,7 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd)
 void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 {
     std::vector<uint32_t> opaque_draws;
+    std::vector<MatGroup> groups;
     opaque_draws.reserve(mainDrawContext.OpaqueSurfaces.size());
 
 
@@ -946,6 +947,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     //和之后的比，是为了合批进行自动instance
     const RenderObject* rep = nullptr;     // 当前批的代表物体（取 indexCount/firstIndex/material 等）
     uint32_t batchStart = 0, instanceCount = 1;//firstindex = batchStart,指名当前是取GPUObject里哪个数据
+    std::vector<VkDrawIndexedIndirectCommand> commands;//命令合批3.2
+
     //instanceCount 
 
     auto sameBatch = [](const RenderObject& a, const RenderObject& b) {
@@ -954,27 +957,22 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         };
 
 
+
     auto flush = [&]() {
         if (instanceCount == 0) return;
         const RenderObject& r = *rep;
-        // —— bind material（保留你的 lastMaterial/lastPipeline 跳过逻辑）——
-        if (r.material != lastMaterial) {
-            lastMaterial = r.material;
-            if (r.material->pipeline != lastPipeline) {
-                lastPipeline = r.material->pipeline;
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 2, 1, &objectDescriptor, 0, nullptr);
-            }
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 1, 1, &r.material->materialSet, 0, nullptr);
-        }
-        if (r.indexBuffer != lastIndexBuffer) {
-            lastIndexBuffer = r.indexBuffer;
-            vkCmdBindIndexBuffer(cmd, r.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        }
-        vkCmdDrawIndexed(cmd, r.indexCount, instanceCount, r.firstIndex, 0, batchStart);  // ← instanceCount=批大小, firstInstance=批头
-        stats.drawcall_count++;
-        stats.triangle_count += (r.indexCount / 3) * instanceCount;
+        commands.push_back({
+            .indexCount = r.indexCount,
+            .instanceCount = instanceCount,   // 批大小，和阶段2 一样
+            .firstIndex = r.firstIndex,    // 已经是 mega 相对(baseIndex+startIndex)，3.1 做好的
+            .vertexOffset = 0,               // per-mesh BDA，不 rebase
+            .firstInstance = batchStart,      // 这批在 objects[] 里的起点
+                });
+
+        if (groups.empty() || r.material != groups.back().material)
+            groups.push_back({ r.material, (uint32_t)commands.size() - 1, 1 });
+        else
+            groups.back().cmdCount++;
         };
     
     rep = &mainDrawContext.OpaqueSurfaces[opaque_draws[0]];
@@ -990,6 +988,39 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     }
 
     flush();   // ★ 别忘了最后一批
+
+    size_t bytes = commands.size() * sizeof(VkDrawIndexedIndirectCommand);
+    AllocatedBuffer indirectBuf = create_buffer(bytes,
+        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+        | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,        // STORAGE 是给阶段4 compute 写用，现在加上无妨
+        VMA_MEMORY_USAGE_CPU_TO_GPU);
+    memcpy(indirectBuf.allocation->GetMappedData(), commands.data(), bytes);
+    // 每帧建的话记得丢进 get_current_frame()._deletionQueue
+
+    get_current_frame()._deletionQueue.push_function([=, this]() {
+        destroy_buffer(indirectBuf);
+        });
+
+    vkCmdBindIndexBuffer(cmd, _megaIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);  // 整场景只绑一次
+    for (auto& g : groups) {
+        // —— bind material（保留你的 lastMaterial/lastPipeline 跳过逻辑）——
+        if (g.material != lastMaterial) {
+            lastMaterial = g.material;
+            if (g.material->pipeline != lastPipeline) {
+                lastPipeline = g.material->pipeline;
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->pipeline);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->layout, 2, 1, &objectDescriptor, 0, nullptr);
+            }
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->layout, 1, 1, &g.material->materialSet, 0, nullptr);
+        }
+        //bind(g.material 的 pipeline + set0 / set1 / set2);   // 沿用你的 lastMaterial/lastPipeline 跳过逻辑
+        vkCmdDrawIndexedIndirect(cmd, indirectBuf.buffer,
+            g.cmdOffset * sizeof(VkDrawIndexedIndirectCommand),  // offset
+            g.cmdCount,                                          // drawCount = 这组命令条数
+            sizeof(VkDrawIndexedIndirectCommand));               // stride
+    }
+
 
 
     auto drawTranparent = [&](const RenderObject& r, uint32_t objectIndex){
