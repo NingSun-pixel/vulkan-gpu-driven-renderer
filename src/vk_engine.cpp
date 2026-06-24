@@ -152,6 +152,13 @@ void VulkanEngine::init()
     assert(structureFile.has_value());
 
     loadedScenes["structure"] = *structureFile;
+
+    std::vector<std::shared_ptr<MeshAsset>> allMeshes;
+    for (auto& [name,mesh] : structureFile->get()->meshes)
+    {
+        allMeshes.push_back(mesh);
+    }
+    build_mega_index_buffer(allMeshes);
 }
 
 void VulkanEngine::init_vulkan()
@@ -825,13 +832,13 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     // ===== 临时统计：阶段2/3 能省多少 draw call（验证后删掉）=====
     {
         // 阶段2：相邻且 同material+同mesh → 一批（= instancing 后的 draw 数）
-        uint32_t batchCount = 0, curInst = 0, maxInst = 0;
+        uint32_t instanceCount = 0, curInst = 0, maxInst = 0;
         MaterialInstance* lastMat = nullptr;
         VkBuffer lastIdx = VK_NULL_HANDLE;
         for (auto idx : opaque_draws) {
             auto& r = mainDrawContext.OpaqueSurfaces[idx];
             if (r.material != lastMat || r.indexBuffer != lastIdx) {
-                batchCount++; lastMat = r.material; lastIdx = r.indexBuffer; curInst = 1;
+                instanceCount++; lastMat = r.material; lastIdx = r.indexBuffer; curInst = 1;
             }
             else {
                 curInst++;
@@ -843,7 +850,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
         fmt::println("[STATS] opaque objects = {}", opaque_draws.size());
         fmt::println("[STATS]2 batches(mat+mesh) = {}  (decline {:.1f}x, max instance number: {})",
-            batchCount, (float)opaque_draws.size() / batchCount, maxInst);
+            instanceCount, (float)opaque_draws.size() / instanceCount, maxInst);
         fmt::println("[STATS] 3 material number:      = {}  (decline {:.1f}x)",
             mats.size(), (float)opaque_draws.size() / mats.size());
     }
@@ -933,7 +940,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     //和之前的比，是为了少切换pipeline和少重新赋值
     //和之后的比，是为了合批进行自动instance
     const RenderObject* rep = nullptr;     // 当前批的代表物体（取 indexCount/firstIndex/material 等）
-    uint32_t batchStart = 0, batchCount = 0;
+    uint32_t batchStart = 0, instanceCount = 0;//firstindex = batchStart,指名当前是取GPUObject里哪个数据
+    //instanceCount 
 
     auto sameBatch = [](const RenderObject& a, const RenderObject& b) {
         return a.material == b.material && a.indexBuffer == b.indexBuffer
@@ -942,7 +950,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
 
     auto flush = [&]() {
-        if (batchCount == 0) return;
+        if (instanceCount == 0) return;
         const RenderObject& r = *rep;
         // —— bind material（保留你的 lastMaterial/lastPipeline 跳过逻辑）——
         if (r.material != lastMaterial) {
@@ -959,20 +967,20 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
             lastIndexBuffer = r.indexBuffer;
             vkCmdBindIndexBuffer(cmd, r.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         }
-        vkCmdDrawIndexed(cmd, r.indexCount, batchCount, r.firstIndex, 0, batchStart);  // ← instanceCount=批大小, firstInstance=批头
+        vkCmdDrawIndexed(cmd, r.indexCount, instanceCount, r.firstIndex, 0, batchStart);  // ← instanceCount=批大小, firstInstance=批头
         stats.drawcall_count++;
-        stats.triangle_count += (r.indexCount / 3) * batchCount;
+        stats.triangle_count += (r.indexCount / 3) * instanceCount;
         };
     
 
     for (size_t j = 0; j < opaque_draws.size() - 1; j++) {
         const RenderObject& r = mainDrawContext.OpaqueSurfaces[opaque_draws[j]];
-        if (batchCount > 0 && sameBatch(*rep, r)) {
-            batchCount++;                       // 同批，数量+1
+        if (instanceCount > 0 && sameBatch(*rep, r)) {
+            instanceCount++;                       // 同批，数量+1
         }
         else {
             flush();                            // 先画掉上一批
-            rep = &r; batchStart = j; batchCount = 1;   // 开新批
+            rep = &r; batchStart = j; instanceCount = 1;   // 开新批
         }
     }
 
@@ -1312,19 +1320,19 @@ void VulkanEngine::init_default_data() {
 
     defaultData = metalRoughMaterial.write_material(_device, MaterialPass::MainColor, materialResources, get_current_frame()._frameDescriptors);
 
-    for (auto& m : testMeshes) {
-        std::shared_ptr<MeshNode> newNode = std::make_shared<MeshNode>();
-        newNode->mesh = m;
+    //for (auto& m : testMeshes) {
+    //    std::shared_ptr<MeshNode> newNode = std::make_shared<MeshNode>();
+    //    newNode->mesh = m;
 
-        newNode->localTransform = glm::mat4{ 1.f };
-        newNode->worldTransform = glm::mat4{ 1.f };
+    //    newNode->localTransform = glm::mat4{ 1.f };
+    //    newNode->worldTransform = glm::mat4{ 1.f };
 
-        for (auto& s : newNode->mesh->surfaces) {
-            s.material = std::make_shared<GLTFMaterial>(defaultData);
-        }
-
-        loadedNodes[m->name] = std::move(newNode);
-    }
+    //    for (auto& s : newNode->mesh->surfaces) {
+    //        s.material = std::make_shared<GLTFMaterial>(defaultData);
+    //    }
+    //    
+    //    loadedNodes[m->name] = std::move(newNode);
+    //}
 }
 
 void VulkanEngine::resize_swapchain()
@@ -1431,8 +1439,6 @@ void VulkanEngine::update_scene()
 
     mainDrawContext.OpaqueSurfaces.clear();
 
-    loadedNodes["Suzanne"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
-
     loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
 
     sceneData.view = view;
@@ -1449,14 +1455,41 @@ void VulkanEngine::update_scene()
     sceneData.sunlightColor = glm::vec4(1.f);
     sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
 
-    for (int x = -3; x < 3; x++) {
-
-        glm::mat4 scale = glm::scale(glm::vec3{ 0.2 });
-        glm::mat4 translation = glm::translate(glm::vec3{ x, 1, 0 });
-
-        loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
-    }
 }
+
+void VulkanEngine::build_mega_index_buffer(std::vector<std::shared_ptr<MeshAsset>>& allMeshes) {
+    //allmeshes
+    uint32_t AllIndexCountBefore = 0;
+    uint32_t GetTotalSizeToCreate = 0;
+    for (auto M : allMeshes)
+    {
+        for (auto Geo : M->surfaces)
+            GetTotalSizeToCreate += Geo.count;
+    }
+    _megaIndexBuffer = create_buffer(GetTotalSizeToCreate * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+
+
+    immediate_submit([&](VkCommandBuffer cmd) {
+        for (auto &M : allMeshes)
+        {
+            uint32_t OneMeshIndexCount = 0;
+            M->baseIndex = AllIndexCountBefore;
+
+            for (auto &Geo : M->surfaces)
+            {
+                OneMeshIndexCount += Geo.count;
+            }
+            VkBufferCopy copy{};
+            copy.srcOffset = 0;
+            copy.dstOffset = (VkDeviceSize)AllIndexCountBefore * sizeof(uint32_t);
+            copy.size = (VkDeviceSize)OneMeshIndexCount * sizeof(uint32_t);
+            vkCmdCopyBuffer(cmd, M->meshBuffers.indexBuffer.buffer, _megaIndexBuffer.buffer, 1, &copy);
+            AllIndexCountBefore += OneMeshIndexCount;
+        }
+    });
+    _mainDeletionQueue.push_function([&]() { destroy_buffer(_megaIndexBuffer); });
+}
+
 
 
 void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
@@ -1561,8 +1594,8 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
     for (auto& s : mesh->surfaces) {
         RenderObject def;
         def.indexCount = s.count;
-        def.firstIndex = s.startIndex;
-        def.indexBuffer = mesh->meshBuffers.indexBuffer.buffer;
+        def.firstIndex = s.startIndex + mesh->baseIndex;
+        def.indexBuffer = loadedEngine->_megaIndexBuffer.buffer;//mesh->meshBuffers.indexBuffer.buffer;
         def.material = &s.material->data;
         def.bounds = s.bounds;
         def.transform = nodeMatrix;

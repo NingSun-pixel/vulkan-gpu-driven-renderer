@@ -262,15 +262,17 @@ public:
 	MaterialInstance defaultData;
 	GLTFMetallic_Roughness metalRoughMaterial;
 
+	AllocatedBuffer _megaIndexBuffer;
+
 	DrawContext mainDrawContext;
 	std::unordered_map<std::string, std::shared_ptr<Node>> loadedNodes;
 
 	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
 
 	void update_scene();
+	void build_mega_index_buffer(std::vector<std::shared_ptr<MeshAsset>>& allMeshes);
 private:
 	void init_descriptors();
-	void init_triangle_pipeline();
 	void init_pipelines();
 	void init_background_pipelines();
 	void init_vulkan();

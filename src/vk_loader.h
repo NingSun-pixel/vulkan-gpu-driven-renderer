@@ -28,6 +28,7 @@ struct MeshAsset {
     std::string name;
 
     std::vector<GeoSurface> surfaces;
+    uint32_t baseIndex = 0;   // 这个 mesh 在 mega 里的起点（索引单位）
     GPUMeshBuffers meshBuffers;
 };
 

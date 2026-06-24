@@ -440,6 +440,8 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
 
             // load indexes
             {
+                //拿到第二个primitive，primitive之间顶点和index都是分开存的，这一步是为了把相同mesh的index和顶点合并
+                //变成一个中型buffer，不同的mesh的vertex和indice信息还是不在一起的
                 fastgltf::Accessor& indexaccessor = gltf.accessors[p.indicesAccessor.value()];
                 indices.reserve(indices.size() + indexaccessor.count);
 
