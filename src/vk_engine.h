@@ -50,6 +50,8 @@ struct FrameData {
 
 	DeletionQueue _deletionQueue;
 	DescriptorAllocatorGrowable _frameDescriptors;
+
+	VkQueryPool _timestampPool;
 };
 
 struct GPUSceneData {
@@ -142,6 +144,10 @@ struct EngineStats {
 	int drawcall_count;
 	float scene_update_time_CPU;
 	float mesh_draw_time_CPU;
+
+	float gpu_ms_geometry = 0;
+	float gpu_ms_history[120] = {};
+	int   gpu_ms_offset = 0;
 };
 
 
@@ -276,6 +282,10 @@ public:
 
 	void update_scene();
 	void build_mega_index_buffer(std::vector<std::shared_ptr<MeshAsset>>& allMeshes);
+
+	//timestamp
+	float _timestampPeriod;
+	bool _gpuTimingEnabled;
 private:
 	void init_descriptors();
 	void init_pipelines();

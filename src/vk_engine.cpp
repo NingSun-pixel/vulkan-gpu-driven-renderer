@@ -134,9 +134,21 @@ void VulkanEngine::init()
 
     init_pipelines();
 
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(_chosenGPU, &props);
+    _timestampPeriod = props.limits.timestampPeriod;
+
+    uint32_t n = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(_chosenGPU, &n, nullptr);
+    std::vector<VkQueueFamilyProperties> fams(n);
+    vkGetPhysicalDeviceQueueFamilyProperties(_chosenGPU, &n, fams.data());
+    _gpuTimingEnabled = fams[_graphicsQueueFamily].timestampValidBits > 0;
+
     init_imgui();
 
+
     init_default_data();
+
     // everything went fine
     _isInitialized = true;
 
@@ -249,6 +261,13 @@ void VulkanEngine::init_commands()
         VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_frames[i]._commandPool, 1);
 
         VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_frames[i]._mainCommandBuffer));
+
+
+        VkQueryPoolCreateInfo qpInfo{};
+        qpInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        qpInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        qpInfo.queryCount = 2;                       // 两个槽：geometry 开始 / 结束
+        VK_CHECK(vkCreateQueryPool(_device, &qpInfo, nullptr, &_frames[i]._timestampPool));
     }
 
 
@@ -258,6 +277,8 @@ void VulkanEngine::init_commands()
     VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_immCommandPool, 1);
 
     VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_immCommandBuffer));
+
+
 
     _mainDeletionQueue.push_function([=]() {
         vkDestroyCommandPool(_device, _immCommandPool, nullptr);
@@ -674,6 +695,13 @@ void VulkanEngine::draw()
     // second
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
 
+    if (_frameNumber >= FRAME_OVERLAP) {
+        uint64_t ts[2];
+        vkGetQueryPoolResults(_device, get_current_frame()._timestampPool, 0, 2, sizeof(ts), ts,
+            sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+        stats.gpu_ms_geometry = (ts[1] - ts[0]) * _timestampPeriod / 1e6f;  // ns→ms
+    }
+
     //the second time you run this frame
     get_current_frame()._deletionQueue.flush();
 
@@ -708,6 +736,7 @@ void VulkanEngine::draw()
     //start the command buffer recording
     VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
 
+    vkCmdResetQueryPool(cmd, get_current_frame()._timestampPool, 0, 2);
     //make the swapchain image into writeable mode before rendering
     vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
@@ -757,7 +786,7 @@ void VulkanEngine::draw()
     VkSubmitInfo2 submit = vkinit::submit_info(&cmdinfo, &signalInfo, &waitInfo);
 
     //submit command buffer to the queue and execute it.
-    // _renderFence will now block until the graphic commands finish execution
+    // _render Fence will now block until the graphic commands finish execution
     VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, get_current_frame()._renderFence));
 
     //prepare present
@@ -835,31 +864,31 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         });
 
 
-    // ===== 临时统计：阶段2/3 能省多少 draw call（验证后删掉）=====
-    {
-        // 阶段2：相邻且 同material+同mesh → 一批（= instancing 后的 draw 数）
-        uint32_t instanceCount = 0, curInst = 0, maxInst = 0;
-        MaterialInstance* lastMat = nullptr;
-        VkBuffer lastIdx = VK_NULL_HANDLE;
-        for (auto idx : opaque_draws) {
-            auto& r = mainDrawContext.OpaqueSurfaces[idx];
-            if (r.material != lastMat || r.indexBuffer != lastIdx) {
-                instanceCount++; lastMat = r.material; lastIdx = r.indexBuffer; curInst = 1;
-            }
-            else {
-                curInst++;
-            }
-            maxInst = std::max(maxInst, curInst);
-        }
-        std::set<MaterialInstance*> mats;
-        for (auto idx : opaque_draws) mats.insert(mainDrawContext.OpaqueSurfaces[idx].material);
+    //// ===== 临时统计：阶段2/3 能省多少 draw call（验证后删掉）=====
+    //{
+    //    // 阶段2：相邻且 同material+同mesh → 一批（= instancing 后的 draw 数）
+    //    uint32_t instanceCount = 0, curInst = 0, maxInst = 0;
+    //    MaterialInstance* lastMat = nullptr;
+    //    VkBuffer lastIdx = VK_NULL_HANDLE;
+    //    for (auto idx : opaque_draws) {
+    //        auto& r = mainDrawContext.OpaqueSurfaces[idx];
+    //        if (r.material != lastMat || r.indexBuffer != lastIdx) {
+    //            instanceCount++; lastMat = r.material; lastIdx = r.indexBuffer; curInst = 1;
+    //        }
+    //        else {
+    //            curInst++;
+    //        }
+    //        maxInst = std::max(maxInst, curInst);
+    //    }
+    //    std::set<MaterialInstance*> mats;
+    //    for (auto idx : opaque_draws) mats.insert(mainDrawContext.OpaqueSurfaces[idx].material);
 
-        fmt::println("[STATS] opaque objects = {}", opaque_draws.size());
-        fmt::println("[STATS]2 batches(mat+mesh) = {}  (decline {:.1f}x, max instance number: {})",
-            instanceCount, (float)opaque_draws.size() / instanceCount, maxInst);
-        fmt::println("[STATS] 3 material number:      = {}  (decline {:.1f}x)",
-            mats.size(), (float)opaque_draws.size() / mats.size());
-    }
+    //    fmt::println("[STATS] opaque objects = {}", opaque_draws.size());
+    //    fmt::println("[STATS]2 batches(mat+mesh) = {}  (decline {:.1f}x, max instance number: {})",
+    //        instanceCount, (float)opaque_draws.size() / instanceCount, maxInst);
+    //    fmt::println("[STATS] 3 material number:      = {}  (decline {:.1f}x)",
+    //        mats.size(), (float)opaque_draws.size() / mats.size());
+    //}
 
 
     //reset counters
@@ -872,6 +901,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     VkRenderingAttachmentInfo depthAttachment = vkinit::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
     VkRenderingInfo renderInfo = vkinit::rendering_info(_windowExtent, &colorAttachment, &depthAttachment);
+    vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, get_current_frame()._timestampPool, 0);
 
     vkCmdBeginRendering(cmd, &renderInfo);
 
@@ -1053,7 +1083,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
             opaque_draws.size() + j);      // transparent：接在 opaque 后面
 
 	vkCmdEndRendering(cmd);
-
+    vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, get_current_frame()._timestampPool, 1);
     mainDrawContext.OpaqueSurfaces.clear();
     mainDrawContext.TransparentSurfaces.clear();
 
@@ -1083,7 +1113,7 @@ void VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& f
     VkSubmitInfo2 submit = vkinit::submit_info(&cmdinfo, nullptr, nullptr);
 
     // submit command buffer to the queue and execute it.
-    //  _renderFence will now block until the graphic commands finish execution
+    //  _render Fence will now block until the graphic commands finish execution
     VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, _immFence));
 
     VK_CHECK(vkWaitForFences(_device, 1, &_immFence, true, 9999999999));
@@ -1222,6 +1252,14 @@ void VulkanEngine::run()
         ImGui::Text("update time %f ms", stats.scene_update_time_CPU);
         ImGui::Text("triangles %i", stats.triangle_count);
         ImGui::Text("draws %i", stats.drawcall_count);
+
+        stats.gpu_ms_history[stats.gpu_ms_offset] = stats.gpu_ms_geometry; // 当前值写到 offset 位置
+        stats.gpu_ms_offset = (stats.gpu_ms_offset + 1) % 120;            // 指针前进一格，到 120 绕回 0
+
+        char overlay[32];
+        snprintf(overlay, sizeof(overlay), "gpu %.2f ms", stats.gpu_ms_geometry);
+        ImGui::PlotLines("##gpu", stats.gpu_ms_history, 120, stats.gpu_ms_offset,
+            overlay, 15.0f, 60.0f, ImVec2(0, 60));
 
         ImGui::End();
 
