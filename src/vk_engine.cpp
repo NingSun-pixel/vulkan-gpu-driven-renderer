@@ -206,6 +206,10 @@ void VulkanEngine::init_vulkan()
     features12.bufferDeviceAddress = true;
     features12.descriptorIndexing = true;
 
+    // 在 selector 之前加：
+    VkPhysicalDeviceFeatures features10{};
+    features10.multiDrawIndirect = VK_TRUE;
+    features10.drawIndirectFirstInstance = VK_TRUE;   // ★ 你 indirect 命令用了 firstInstance!=0，这个也得开
 
     //use vkbootstrap to select a gpu. 
     //We want a gpu that can write to the SDL surface and supports vulkan 1.3 with the correct features
@@ -214,6 +218,7 @@ void VulkanEngine::init_vulkan()
         .set_minimum_version(1, 3)
         .set_required_features_13(features)
         .set_required_features_12(features12)
+        .set_required_features(features10)
         .set_surface(_surface)
         .select()
         .value();
@@ -320,7 +325,13 @@ void VulkanEngine::init_descriptors()
     {
         DescriptorLayoutBuilder builder;
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);   // binding 0 = SSBO
-        _objectDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT);
+        _objectDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT);
+    }
+
+    {
+        DescriptorLayoutBuilder builder;
+        builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);   // binding 0 = SSBO
+        _CommandDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
     }
 
     //create a descriptor pool that will hold 10 sets with 1 image each
@@ -338,9 +349,6 @@ void VulkanEngine::init_descriptors()
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
         _drawImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
     }
-
-
-
 
     //allocate a descriptor set for our draw image
     _drawImageDescriptors = globalDescriptorAllocator.allocate(_device, _drawImageDescriptorLayout);
@@ -431,7 +439,7 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
     newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfo);
 
     //create index buffer
-    newSurface.indexBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+    newSurface.indexBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         VMA_MEMORY_USAGE_GPU_ONLY);
     AllocatedBuffer staging = create_buffer(vertexBufferSize + indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
 
@@ -468,6 +476,7 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
 void VulkanEngine::init_pipelines()
 {
     init_background_pipelines();
+    init_Cull_pipelines();
     metalRoughMaterial.build_pipelines(this);
 }
 
@@ -550,6 +559,96 @@ void VulkanEngine::init_background_pipelines()
         vkDestroyPipeline(_device, gradient.pipeline, nullptr);
         });
 }
+
+//Cull Compute shader
+void VulkanEngine::init_Cull_pipelines()
+{
+    VkDescriptorSetLayout layouts[] = {_objectDataDescriptorLayout, _CommandDataDescriptorLayout};
+
+    VkPipelineLayoutCreateInfo cullObjLayout{};
+    cullObjLayout.setLayoutCount = 2;
+    cullObjLayout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    cullObjLayout.pNext = nullptr;
+    cullObjLayout.pSetLayouts = layouts;
+
+    //?
+    VkPushConstantRange pushConstant{};
+    pushConstant.offset = 0;
+    pushConstant.size = sizeof(ComputePushConstants);
+    pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    cullObjLayout.pPushConstantRanges = &pushConstant;
+    cullObjLayout.pushConstantRangeCount = 1;
+
+    VK_CHECK(vkCreatePipelineLayout(_device, &cullObjLayout, nullptr, &_cullPipelineLayout));
+
+
+    VkShaderModule cullComputeShader;
+    if (!vkutil::load_shader_module("../../shaders/Cull.comp.spv", _device, &cullComputeShader)) {
+        fmt::print("Error when building the compute shader \n");
+    }
+
+    VkPipelineShaderStageCreateInfo stageinfo{};
+    stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageinfo.pNext = nullptr;
+    stageinfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageinfo.module = cullComputeShader;
+    stageinfo.pName = "main";
+
+    VkComputePipelineCreateInfo computePipelineCreateInfo{};
+    computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    computePipelineCreateInfo.pNext = nullptr;
+    computePipelineCreateInfo.layout = _cullPipelineLayout;
+    computePipelineCreateInfo.stage = stageinfo;
+
+    //ComputeEffect cullObj;
+    CullpipelineEffects.layout = _cullPipelineLayout;
+    CullpipelineEffects.name = "Cull";
+    CullpipelineEffects.data = {};
+
+
+    CullpipelineEffects = CullpipelineEffects;
+    VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &CullpipelineEffects.pipeline));
+
+
+    //destroy structures properly
+    vkDestroyShaderModule(_device, cullComputeShader, nullptr);
+    _mainDeletionQueue.push_function([=]() {
+        vkDestroyPipelineLayout(_device, _cullPipelineLayout, nullptr);
+        vkDestroyPipeline(_device, CullpipelineEffects.pipeline, nullptr);
+        });
+}
+
+//cull compute shader draw
+//对改造后的GPUObject数据补全，vkCmdPushConstants(viewproj, count)的补全，链接上command，还有bind建立
+void VulkanEngine::draw_Cull(VkCommandBuffer cmd)
+{
+    ComputeEffect& effect = CullpipelineEffects;
+
+    // bind the background compute pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, effect.pipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cullPipelineLayout, 0, 1, &objectDescriptor, 0, nullptr);
+    // bind the descriptor set containing the draw image for the compute pipeline
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cullPipelineLayout, 1, 1, &commandDescriptor, 0, nullptr);
+
+    //effect.data.data1 = sceneData.viewproj[0];
+    //effect.data.data2 = sceneData.viewproj[1];
+    //effect.data.data3 = sceneData.viewproj[2];
+    //effect.data.data4 = sceneData.viewproj[3];
+    //effect.data.data5.x = opaque_draws.size();
+
+    //差这里的data
+    CullPush pc{};
+    pc.viewproj = sceneData.viewproj;
+    pc.count = (uint32_t)opaque_draws.size();   // ★ 用 uint，不是塞进 float
+    vkCmdPushConstants(cmd, _cullPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CullPush), &pc);
+    vkCmdDispatch(cmd, (pc.count + 63) / 64, 1, 1); // 整数取整，别用 float
+
+    //vkCmdPushConstants(cmd, _cullPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &effect.data);
+    //// execute the compute pipeline dispatch. We are using 16x16 workgroup size so we need to divide by it
+    //vkCmdDispatch(cmd, ceil(effect.data.data5.x / 64.0), 1, 1);
+}
+
 
 void VulkanEngine::create_swapchain(uint32_t width, uint32_t height)
 {
@@ -704,13 +803,12 @@ void VulkanEngine::draw()
 
     //the second time you run this frame
     get_current_frame()._deletionQueue.flush();
+    get_current_frame()._frameDescriptors.clear_pools(_device);
 
     VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence));
 
     //request image from the swapchain
     uint32_t swapchainImageIndex;
-    //VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 1000000000, get_current_frame()._swapchainSemaphore, nullptr, &swapchainImageIndex));
-
     VkResult e = vkAcquireNextImageKHR(_device, _swapchain, 1000000000, get_current_frame()._swapchainSemaphore, nullptr, &swapchainImageIndex);
     if (e == VK_ERROR_OUT_OF_DATE_KHR) {
         resize_requested = true;
@@ -742,6 +840,22 @@ void VulkanEngine::draw()
 
     //Render
     draw_background(cmd);
+    draw_init();
+    //draw_Cull(cmd);
+
+    //VkBufferMemoryBarrier2 bufBarrier{ .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2 };
+    //bufBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    //bufBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+    //bufBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+    //bufBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+    //bufBarrier.buffer = indirectBuf.buffer;
+    //bufBarrier.offset = 0;
+    //bufBarrier.size = VK_WHOLE_SIZE;
+
+    //VkDependencyInfo depInfo{ .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+    //depInfo.bufferMemoryBarrierCount = 1;
+    //depInfo.pBufferMemoryBarriers = &bufBarrier;
+    //vkCmdPipelineBarrier2(cmd, &depInfo);
 
     //make the swapchain image into presentable mode
     vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -803,6 +917,8 @@ void VulkanEngine::draw()
     presentInfo.waitSemaphoreCount = 1;
 
     presentInfo.pImageIndices = &swapchainImageIndex;
+    
+    draw_clear();
 
     //VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
     VkResult presentResult = vkQueuePresentKHR(_graphicsQueue, &presentInfo);
@@ -830,10 +946,8 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd)
     vkCmdDispatch(cmd, std::ceil(_drawExtent.width / 16.0), std::ceil(_drawExtent.height / 16.0), 1);
 }
 
-void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
+void VulkanEngine::draw_init()
 {
-    std::vector<uint32_t> opaque_draws;
-    std::vector<MatGroup> groups;
     opaque_draws.reserve(mainDrawContext.OpaqueSurfaces.size());
 
 
@@ -863,33 +977,129 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         }
         });
 
+    std::vector<GPUObjectData> objects;
 
-    //// ===== 临时统计：阶段2/3 能省多少 draw call（验证后删掉）=====
-    //{
-    //    // 阶段2：相邻且 同material+同mesh → 一批（= instancing 后的 draw 数）
-    //    uint32_t instanceCount = 0, curInst = 0, maxInst = 0;
-    //    MaterialInstance* lastMat = nullptr;
-    //    VkBuffer lastIdx = VK_NULL_HANDLE;
-    //    for (auto idx : opaque_draws) {
-    //        auto& r = mainDrawContext.OpaqueSurfaces[idx];
-    //        if (r.material != lastMat || r.indexBuffer != lastIdx) {
-    //            instanceCount++; lastMat = r.material; lastIdx = r.indexBuffer; curInst = 1;
-    //        }
-    //        else {
-    //            curInst++;
-    //        }
-    //        maxInst = std::max(maxInst, curInst);
-    //    }
-    //    std::set<MaterialInstance*> mats;
-    //    for (auto idx : opaque_draws) mats.insert(mainDrawContext.OpaqueSurfaces[idx].material);
+    objects.reserve(mainDrawContext.OpaqueSurfaces.size() + mainDrawContext.TransparentSurfaces.size());
+    for (auto& s : opaque_draws)
+        objects.push_back({ mainDrawContext.OpaqueSurfaces[s].transform,
+            mainDrawContext.OpaqueSurfaces[s].vertexBufferAddress,
+            0,
+            mainDrawContext.OpaqueSurfaces[s].bounds.origin,
+            mainDrawContext.OpaqueSurfaces[s].bounds.sphereRadius,
+            glm::vec4(mainDrawContext.OpaqueSurfaces[s].bounds.extents,1)});
+    for (auto& s : mainDrawContext.TransparentSurfaces) objects.push_back({ s.transform, s.vertexBufferAddress });
 
-    //    fmt::println("[STATS] opaque objects = {}", opaque_draws.size());
-    //    fmt::println("[STATS]2 batches(mat+mesh) = {}  (decline {:.1f}x, max instance number: {})",
-    //        instanceCount, (float)opaque_draws.size() / instanceCount, maxInst);
-    //    fmt::println("[STATS] 3 material number:      = {}  (decline {:.1f}x)",
-    //        mats.size(), (float)opaque_draws.size() / mats.size());
-    //}
+    // 4b. 建 SSBO
+    AllocatedBuffer objectBuffer = create_buffer(objects.size() * sizeof(GPUObjectData),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    get_current_frame()._deletionQueue.push_function([=, this]() { destroy_buffer(objectBuffer); });
 
+    name_buffer(objectBuffer.buffer, "objectBuffer");
+    // 4c. 填数据
+    memcpy(objectBuffer.allocation->GetMappedData(), objects.data(), objects.size() * sizeof(GPUObjectData));
+
+    // 4d. 分配 + 写描述符（set 2）
+    objectDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _objectDataDescriptorLayout);
+    {
+        DescriptorWriter writer;
+        writer.write_buffer(0, objectBuffer.buffer, objects.size() * sizeof(GPUObjectData), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.update_set(_device, objectDescriptor);
+    }
+
+
+    //在init里拿到indirectbuf传递给Culldraw
+    //既要和之前的比，又要和之后的比
+    //和之前的比，是为了少切换pipeline和少重新赋值
+    //和之后的比，是为了合批进行自动instance
+    const RenderObject* rep = nullptr;     // 当前批的代表物体（取 indexCount/firstIndex/material 等）
+    uint32_t batchStart = 0, instanceCount = 1;//firstindex = batchStart,指名当前是取GPUObject里哪个数据
+    std::vector<VkDrawIndexedIndirectCommand> commands;//命令合批3.2
+
+    //instanceCount 
+
+    auto sameBatch = [](const RenderObject& a, const RenderObject& b) {
+        return a.material == b.material && a.indexBuffer == b.indexBuffer
+            && a.firstIndex == b.firstIndex && a.indexCount == b.indexCount;   // 同 surface
+        };
+
+
+
+    auto flush = [&]() {
+        if (instanceCount == 0) return;
+        const RenderObject& r = *rep;
+
+        for (int i = 0; i < instanceCount; i++)
+        {
+            commands.push_back({
+            .indexCount = r.indexCount,
+            .instanceCount = 1,   // 批大小，和阶段2 一样
+            .firstIndex = r.firstIndex,    // 已经是 mega 相对(baseIndex+startIndex)，3.1 做好的
+            .vertexOffset = 0,               // per-mesh BDA，不 rebase
+            .firstInstance = batchStart,      // 这批在 objects[] 里的起点
+                });
+            //add counters for triangles and draws
+            stats.drawcall_count++;
+            stats.triangle_count += r.indexCount / 3;
+        }
+        if (groups.empty() || r.material != groups.back().material) 
+            groups.push_back({ r.material, (uint32_t)commands.size() - 1, 1 });
+        else
+            groups.back().cmdCount++;
+        };
+
+    rep = &mainDrawContext.OpaqueSurfaces[opaque_draws[0]];
+    for (size_t j = 0; j < opaque_draws.size() - 1; j++) {
+        const RenderObject& r = mainDrawContext.OpaqueSurfaces[opaque_draws[j + 1]];
+        if (instanceCount > 0 && sameBatch(*rep, r)) {
+            instanceCount++;                       // 同批，数量+1
+        }
+        else {
+            flush();                            // 先画掉上一批
+            rep = &r; batchStart = j + 1; instanceCount = 1;   // 开新批
+        }
+    }
+
+    flush();   // ★ 别忘了最后一批
+
+    size_t bytes = commands.size() * sizeof(VkDrawIndexedIndirectCommand);
+    indirectBuf = create_buffer(bytes,
+        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+        | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,        // STORAGE 是给阶段4 compute 写用，现在加上无妨
+        VMA_MEMORY_USAGE_CPU_TO_GPU);
+    memcpy(indirectBuf.allocation->GetMappedData(), commands.data(), bytes);
+    // 每帧建的话记得丢进 get_current_frame()._deletionQueue
+    name_buffer(indirectBuf.buffer, "indirectBuf");
+
+    AllocatedBuffer indirectToFree = indirectBuf;   // 本帧这块的快照(局部)
+    get_current_frame()._deletionQueue.push_function(
+        [=, this]() { destroy_buffer(indirectToFree); });   // 删快照,不删 this->indirectBuf
+
+
+    //get_current_frame()._deletionQueue.push_function([=, this]() {
+    //    destroy_buffer(indirectBuf);
+    //    });
+
+    // 4d. 分配 + 写描述符（set 2）
+    commandDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _CommandDataDescriptorLayout);
+    {
+        DescriptorWriter writer;
+        writer.write_buffer(0, indirectBuf.buffer, bytes, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.update_set(_device, commandDescriptor);
+    }
+}
+
+void VulkanEngine::draw_clear()
+{
+    opaque_draws.clear();
+}
+
+
+
+void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
+{
+    if (opaque_draws.empty()) {
+        return;
+    }
 
     //reset counters
     stats.drawcall_count = 0;
@@ -949,87 +1159,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     VkBuffer lastIndexBuffer = VK_NULL_HANDLE;
     uint32_t lastFirstIndex = -1;
 
-    std::vector<GPUObjectData> objects;
-
-    objects.reserve(mainDrawContext.OpaqueSurfaces.size() + mainDrawContext.TransparentSurfaces.size());
-    for (auto& s : opaque_draws)      objects.push_back({ mainDrawContext.OpaqueSurfaces[s].transform, mainDrawContext.OpaqueSurfaces[s].vertexBufferAddress});
-    for (auto& s : mainDrawContext.TransparentSurfaces) objects.push_back({ s.transform, s.vertexBufferAddress });
-
-    // 4b. 建 SSBO
-    AllocatedBuffer objectBuffer = create_buffer(objects.size() * sizeof(GPUObjectData),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-    get_current_frame()._deletionQueue.push_function([=, this]() { destroy_buffer(objectBuffer); });
-
-    // 4c. 填数据
-    memcpy(objectBuffer.allocation->GetMappedData(), objects.data(), objects.size() * sizeof(GPUObjectData));
-
-    // 4d. 分配 + 写描述符（set 2）
-    VkDescriptorSet objectDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _objectDataDescriptorLayout);
-    {
-        DescriptorWriter writer;
-        writer.write_buffer(0, objectBuffer.buffer, objects.size() * sizeof(GPUObjectData), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        writer.update_set(_device, objectDescriptor);
-    }
 
 
-    //既要和之前的比，又要和之后的比
-    //和之前的比，是为了少切换pipeline和少重新赋值
-    //和之后的比，是为了合批进行自动instance
-    const RenderObject* rep = nullptr;     // 当前批的代表物体（取 indexCount/firstIndex/material 等）
-    uint32_t batchStart = 0, instanceCount = 1;//firstindex = batchStart,指名当前是取GPUObject里哪个数据
-    std::vector<VkDrawIndexedIndirectCommand> commands;//命令合批3.2
-
-    //instanceCount 
-
-    auto sameBatch = [](const RenderObject& a, const RenderObject& b) {
-        return a.material == b.material && a.indexBuffer == b.indexBuffer
-            && a.firstIndex == b.firstIndex && a.indexCount == b.indexCount;   // 同 surface
-        };
-
-
-
-    auto flush = [&]() {
-        if (instanceCount == 0) return;
-        const RenderObject& r = *rep;
-        commands.push_back({
-            .indexCount = r.indexCount,
-            .instanceCount = instanceCount,   // 批大小，和阶段2 一样
-            .firstIndex = r.firstIndex,    // 已经是 mega 相对(baseIndex+startIndex)，3.1 做好的
-            .vertexOffset = 0,               // per-mesh BDA，不 rebase
-            .firstInstance = batchStart,      // 这批在 objects[] 里的起点
-                });
-
-        if (groups.empty() || r.material != groups.back().material)
-            groups.push_back({ r.material, (uint32_t)commands.size() - 1, 1 });
-        else
-            groups.back().cmdCount++;
-        };
-    
-    rep = &mainDrawContext.OpaqueSurfaces[opaque_draws[0]];
-    for (size_t j = 0; j < opaque_draws.size() - 1; j++) {
-        const RenderObject& r = mainDrawContext.OpaqueSurfaces[opaque_draws[j + 1]];
-        if (instanceCount > 0 && sameBatch(*rep, r)) {
-            instanceCount++;                       // 同批，数量+1
-        }
-        else {
-            flush();                            // 先画掉上一批
-            rep = &r; batchStart = j + 1; instanceCount = 1;   // 开新批
-        }
-    }
-
-    flush();   // ★ 别忘了最后一批
-
-    size_t bytes = commands.size() * sizeof(VkDrawIndexedIndirectCommand);
-    AllocatedBuffer indirectBuf = create_buffer(bytes,
-        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
-        | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,        // STORAGE 是给阶段4 compute 写用，现在加上无妨
-        VMA_MEMORY_USAGE_CPU_TO_GPU);
-    memcpy(indirectBuf.allocation->GetMappedData(), commands.data(), bytes);
-    // 每帧建的话记得丢进 get_current_frame()._deletionQueue
-
-    get_current_frame()._deletionQueue.push_function([=, this]() {
-        destroy_buffer(indirectBuf);
-        });
 
     vkCmdBindIndexBuffer(cmd, _megaIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);  // 整场景只绑一次
     for (auto& g : groups) {
@@ -1075,7 +1206,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         stats.drawcall_count++;
         stats.triangle_count += r.indexCount / 3;
         };
-
 
 
     for (size_t j = 0; j < mainDrawContext.TransparentSurfaces.size(); j++)
@@ -1561,10 +1691,21 @@ void VulkanEngine::build_mega_index_buffer(std::vector<std::shared_ptr<MeshAsset
             AllIndexCountBefore += OneMeshIndexCount;
         }
     });
+
     _mainDeletionQueue.push_function([&]() { destroy_buffer(_megaIndexBuffer); });
 }
 
+void VulkanEngine::name_buffer(VkBuffer buf, const char* name) {
+    static auto func = (PFN_vkSetDebugUtilsObjectNameEXT)
+        vkGetDeviceProcAddr(_device, "vkSetDebugUtilsObjectNameEXT");
+    if (!func) return;   // 没启用 debug_utils 就直接跳过,不崩
 
+    VkDebugUtilsObjectNameInfoEXT info{ VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT };
+    info.objectType = VK_OBJECT_TYPE_BUFFER;
+    info.objectHandle = (uint64_t)buf;
+    info.pObjectName = name;
+    func(_device, &info);
+}
 
 void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
 {

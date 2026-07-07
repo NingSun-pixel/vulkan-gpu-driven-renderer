@@ -25,6 +25,8 @@ layout(buffer_reference, std430) readonly buffer VertexBuffer{
 struct ObjectData{
 	mat4 render_matrix;
 	VertexBuffer vertexBuffer;
+	vec4 boundsOriginRadius;
+	vec4 boundsExtents;
 };
 
 

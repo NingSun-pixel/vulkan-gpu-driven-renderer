@@ -13,6 +13,7 @@ struct ComputePushConstants {
 	glm::vec4 data2;
 	glm::vec4 data3;
 	glm::vec4 data4;
+	glm::vec4 data5;
 };
 
 struct ComputeEffect {
@@ -87,7 +88,15 @@ struct RenderObject {
 struct GPUObjectData {
 	glm::mat4    render_matrix;
 	VkDeviceAddress vertexBuffer; 
-	uint64_t        _pad;            // 8  → 偏移 72，凑到 80
+	uint64_t _pad; // 8  → 偏移 72，凑到 80
+	glm::vec3 origin; 
+	float sphereRadius;
+	glm::vec4 extents;      
+};
+
+struct CullPush {
+	glm::mat4 viewproj;   // 偏移 0，占 64
+	uint32_t  count;      // 偏移 64，uint ← 和 shader 的 uint count 对上
 };
 
 struct MatGroup { 
@@ -178,8 +187,11 @@ public:
 	VkPipeline _gradientPipeline;
 	VkPipelineLayout _gradientPipelineLayout;
 
-	VkPipelineLayout _trianglePipelineLayout;
-	VkPipeline _trianglePipeline;
+	VkPipeline _cullPipeline;
+	VkPipelineLayout _cullPipelineLayout;
+
+	//VkPipelineLayout _trianglePipelineLayout;
+	//VkPipeline _trianglePipeline;
 
 	bool resize_requested;
 	//initializes everything in the engine
@@ -196,6 +208,11 @@ public:
 	void run();
 
 	void draw_background(VkCommandBuffer cmd);
+	void draw_init();
+	void draw_clear();
+
+
+	void draw_Cull(VkCommandBuffer cmd);
 
 	void draw_geometry(VkCommandBuffer cmd);
 
@@ -235,6 +252,7 @@ public:
 	VkCommandPool _immCommandPool;
 
 	std::vector<ComputeEffect> backgroundEffects;
+	ComputeEffect CullpipelineEffects;
 	int currentBackgroundEffect{ 0 };
 
 	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
@@ -258,6 +276,9 @@ public:
 	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
 	VkDescriptorSetLayout _singleImageDescriptorLayout;
 
+	VkDescriptorSetLayout _CommandDataDescriptorLayout;
+
+
 	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	void destroy_image(const AllocatedImage& img);
@@ -273,7 +294,11 @@ public:
 	MaterialInstance defaultData;
 	GLTFMetallic_Roughness metalRoughMaterial;
 
+	std::vector<MatGroup> groups;
+
+
 	AllocatedBuffer _megaIndexBuffer;
+	AllocatedBuffer indirectBuf;
 
 	DrawContext mainDrawContext;
 	std::unordered_map<std::string, std::shared_ptr<Node>> loadedNodes;
@@ -286,10 +311,16 @@ public:
 	//timestamp
 	float _timestampPeriod;
 	bool _gpuTimingEnabled;
+
+	std::vector<uint32_t> opaque_draws;
+	VkDescriptorSet objectDescriptor;
+	VkDescriptorSet commandDescriptor;
+	void name_buffer(VkBuffer buf, const char* name);
 private:
 	void init_descriptors();
 	void init_pipelines();
 	void init_background_pipelines();
+	void init_Cull_pipelines();
 	void init_vulkan();
 	void init_swapchain();
 	void resize_swapchain();

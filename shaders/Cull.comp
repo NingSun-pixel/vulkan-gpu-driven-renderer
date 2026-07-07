@@ -1,0 +1,69 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+
+layout(local_size_x = 64) in;                    // 一个 workgroup 64 线程
+
+struct Vertex {
+	vec3 position;
+	float uv_x;
+	vec3 normal;
+	float uv_y;
+	vec4 color;
+}; 
+
+
+layout(buffer_reference, std430) readonly buffer VertexBuffer{ 
+	Vertex vertices[];
+};
+
+struct ObjectData{
+	mat4 render_matrix;
+	VertexBuffer vertexBuffer;
+	vec4 boundsOriginRadius;
+	vec4 boundsExtents;
+};
+
+layout(set = 0, binding = 0, std430) readonly buffer ObjectBuffer 
+{
+	ObjectData objects[];
+}objectBuffer;
+
+
+struct IndirectCmd {
+    uint indexCount, instanceCount, firstIndex;
+    int vertexOffset; 
+    uint firstInstance; 
+};
+layout(set=1, binding=0, std430) buffer CmdBuffer { IndirectCmd commands[]; };
+
+layout(push_constant) uniform Push { mat4 viewproj; uint count; } pc;
+
+void main() 
+{
+    uint i = gl_GlobalInvocationID.x; //拿到当前线程ID
+    if (i >= pc.count) return;                    // 大于ID的线程留空
+    
+    commands[i].instanceCount = 1u;
+    // mat4 m = pc.viewproj * objectBuffer.objects[i].render_matrix;
+    // vec3 origin  = objectBuffer.objects[i].boundsOriginRadius.xyz;
+    // vec3 extents = objectBuffer.objects[i].boundsExtents.xyz;
+
+    // const vec3 corners[8] = vec3[8](
+    //     vec3(1,1,1),vec3(1,1,-1),vec3(1,-1,1),vec3(1,-1,-1),
+    //     vec3(-1,1,1),vec3(-1,1,-1),vec3(-1,-1,1),vec3(-1,-1,-1));
+
+    // vec3 mn = vec3(1.5), mx = vec3(-1.5);
+    // bool keep = false;
+    // for (int c=0;c<8;c++){
+    //     vec4 v = m * vec4(origin + corners[c]*extents, 1.0);
+    //     if (v.w <= 0.0) { keep = true; break; }   // ★ 移植 CPU 的保守保留（跨近平面）
+    //     v.xyz /= v.w;
+    //     mn = min(mn, v.xyz); mx = max(mx, v.xyz);
+    // }
+    // bool visible = keep ||
+    //     !(mn.z>1.0 || mx.z<0.0 || mn.x>1.0 || mx.x<-1.0 || mn.y>1.0 || mx.y<-1.0); // 照搬 is_visible 判定
+
+    // commands[i].instanceCount = visible ? 1u : 0u;
+}
