@@ -34,6 +34,40 @@ void vkutil::transition_image(VkCommandBuffer cmd, VkImage image, VkImageLayout 
     vkCmdPipelineBarrier2(cmd, &depInfo);
 }
 
+////change the image to readable
+//void vkutil::Barrier_image(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout, 
+//    VkPipelineStageFlags2 srcStageMask, VkPipelineStageFlags2 dstStageMask, VkAccessFlags2 srcAccessMask, VkAccessFlags2 dstAccessMask)
+//{
+//    //Set a Barrier to make GPU first complete it than to do another things
+//    VkImageMemoryBarrier2 imageBarrier{ .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+//    imageBarrier.pNext = nullptr;
+//
+//    //stop all GPU Command to stop here
+//    imageBarrier.srcStageMask = srcStageMask;
+//    //waiting until the before writing operation finished
+//    imageBarrier.srcAccessMask = srcAccessMask;
+//    //After here finished all GPU Command can go
+//    imageBarrier.dstStageMask = dstStageMask;
+//    //After transfer GPU can write or read
+//    imageBarrier.dstAccessMask = dstAccessMask;
+//
+//    imageBarrier.oldLayout = currentLayout;
+//    imageBarrier.newLayout = newLayout;
+//
+//    VkImageAspectFlags aspectMask = (newLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+//    imageBarrier.subresourceRange = vkinit::image_subresource_range(aspectMask);
+//    imageBarrier.image = image;
+//
+//    VkDependencyInfo depInfo{};
+//    depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+//    depInfo.pNext = nullptr;
+//
+//    depInfo.imageMemoryBarrierCount = 1;
+//    depInfo.pImageMemoryBarriers = &imageBarrier;
+//
+//    vkCmdPipelineBarrier2(cmd, &depInfo);
+//}
+
 void vkutil::copy_image_to_image(VkCommandBuffer cmd, VkImage source, VkImage destination, VkExtent2D srcSize, VkExtent2D dstSize)
 {
 	VkImageBlit2 blitRegion{ .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2, .pNext = nullptr };

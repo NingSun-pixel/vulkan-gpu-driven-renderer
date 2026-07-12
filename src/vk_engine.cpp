@@ -631,12 +631,6 @@ void VulkanEngine::draw_Cull(VkCommandBuffer cmd)
     // bind the descriptor set containing the draw image for the compute pipeline
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cullPipelineLayout, 1, 1, &commandDescriptor, 0, nullptr);
 
-    //effect.data.data1 = sceneData.viewproj[0];
-    //effect.data.data2 = sceneData.viewproj[1];
-    //effect.data.data3 = sceneData.viewproj[2];
-    //effect.data.data4 = sceneData.viewproj[3];
-    //effect.data.data5.x = opaque_draws.size();
-
     //差这里的data
     CullPush pc{};
     pc.viewproj = sceneData.viewproj;
@@ -644,9 +638,6 @@ void VulkanEngine::draw_Cull(VkCommandBuffer cmd)
     vkCmdPushConstants(cmd, _cullPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CullPush), &pc);
     vkCmdDispatch(cmd, (pc.count + 63) / 64, 1, 1); // 整数取整，别用 float
 
-    //vkCmdPushConstants(cmd, _cullPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &effect.data);
-    //// execute the compute pipeline dispatch. We are using 16x16 workgroup size so we need to divide by it
-    //vkCmdDispatch(cmd, ceil(effect.data.data5.x / 64.0), 1, 1);
 }
 
 
@@ -841,21 +832,21 @@ void VulkanEngine::draw()
     //Render
     draw_background(cmd);
     draw_init();
-    //draw_Cull(cmd);
+    draw_Cull(cmd);
 
-    //VkBufferMemoryBarrier2 bufBarrier{ .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2 };
-    //bufBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    //bufBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-    //bufBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-    //bufBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-    //bufBarrier.buffer = indirectBuf.buffer;
-    //bufBarrier.offset = 0;
-    //bufBarrier.size = VK_WHOLE_SIZE;
+    VkBufferMemoryBarrier2 bufBarrier{ .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2 };
+    bufBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    bufBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+    bufBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+    bufBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+    bufBarrier.buffer = indirectBuf.buffer;
+    bufBarrier.offset = 0;
+    bufBarrier.size = VK_WHOLE_SIZE;
 
-    //VkDependencyInfo depInfo{ .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-    //depInfo.bufferMemoryBarrierCount = 1;
-    //depInfo.pBufferMemoryBarriers = &bufBarrier;
-    //vkCmdPipelineBarrier2(cmd, &depInfo);
+    VkDependencyInfo depInfo{ .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+    depInfo.bufferMemoryBarrierCount = 1;
+    depInfo.pBufferMemoryBarriers = &bufBarrier;
+    vkCmdPipelineBarrier2(cmd, &depInfo);
 
     //make the swapchain image into presentable mode
     vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -865,13 +856,6 @@ void VulkanEngine::draw()
     vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     //Transfer to unreadable again
     vkutil::transition_image(cmd, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-    //// execute a copy from the draw image into the swapchain
-    //vkutil::copy_image_to_image(cmd, _drawImage.image, _swapchainImages[swapchainImageIndex], _drawExtent, _swapchainExtent);
-
-    //// set swapchain image layout to Present so we can show it on the screen
-    //vkutil::transition_image(cmd, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-
 
     // execute a copy from the draw image into the swapchain
     vkutil::copy_image_to_image(cmd, _drawImage.image, _swapchainImages[swapchainImageIndex], _drawExtent, _swapchainExtent);
@@ -952,9 +936,7 @@ void VulkanEngine::draw_init()
 
 
     for (int i = 0; i < mainDrawContext.OpaqueSurfaces.size(); i++) {
-        if (is_visible(mainDrawContext.OpaqueSurfaces[i], sceneData.viewproj)) {
-            opaque_draws.push_back(i);
-        }
+        opaque_draws.push_back(i);
     }
 
     if (opaque_draws.empty()) {
@@ -1035,16 +1017,16 @@ void VulkanEngine::draw_init()
             .instanceCount = 1,   // 批大小，和阶段2 一样
             .firstIndex = r.firstIndex,    // 已经是 mega 相对(baseIndex+startIndex)，3.1 做好的
             .vertexOffset = 0,               // per-mesh BDA，不 rebase
-            .firstInstance = batchStart,      // 这批在 objects[] 里的起点
+            .firstInstance = batchStart + (uint32_t)i,      // 这批在 objects[] 里的起点
                 });
             //add counters for triangles and draws
             stats.drawcall_count++;
             stats.triangle_count += r.indexCount / 3;
         }
-        if (groups.empty() || r.material != groups.back().material) 
-            groups.push_back({ r.material, (uint32_t)commands.size() - 1, 1 });
+        if (groups.empty() || r.material != groups.back().material)
+            groups.push_back({ r.material, (uint32_t)commands.size() - 1, (uint32_t)instanceCount });  // ← offset/count 都错
         else
-            groups.back().cmdCount++;
+            groups.back().cmdCount += instanceCount;
         };
 
     rep = &mainDrawContext.OpaqueSurfaces[opaque_draws[0]];
@@ -1091,6 +1073,7 @@ void VulkanEngine::draw_init()
 void VulkanEngine::draw_clear()
 {
     opaque_draws.clear();
+    groups.clear();
 }
 
 
@@ -1178,7 +1161,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         //bind(g.material 的 pipeline + set0 / set1 / set2);   // 沿用你的 lastMaterial/lastPipeline 跳过逻辑
         vkCmdDrawIndexedIndirect(cmd, indirectBuf.buffer,
             g.cmdOffset * sizeof(VkDrawIndexedIndirectCommand),  // offset
-            g.cmdCount,                                          // drawCount = 这组命令条数
+            g.cmdCount,                                          // drawCount = 这组命令条数，改成非instance之后，命令条数=instance数目
             sizeof(VkDrawIndexedIndirectCommand));               // stride
     }
 
@@ -1524,19 +1507,6 @@ void VulkanEngine::init_default_data() {
 
     defaultData = metalRoughMaterial.write_material(_device, MaterialPass::MainColor, materialResources, get_current_frame()._frameDescriptors);
 
-    //for (auto& m : testMeshes) {
-    //    std::shared_ptr<MeshNode> newNode = std::make_shared<MeshNode>();
-    //    newNode->mesh = m;
-
-    //    newNode->localTransform = glm::mat4{ 1.f };
-    //    newNode->worldTransform = glm::mat4{ 1.f };
-
-    //    for (auto& s : newNode->mesh->surfaces) {
-    //        s.material = std::make_shared<GLTFMaterial>(defaultData);
-    //    }
-    //    
-    //    loadedNodes[m->name] = std::move(newNode);
-    //}
 }
 
 void VulkanEngine::resize_swapchain()
@@ -1670,7 +1640,7 @@ void VulkanEngine::build_mega_index_buffer(std::vector<std::shared_ptr<MeshAsset
         for (auto Geo : M->surfaces)
             GetTotalSizeToCreate += Geo.count;
     }
-    _megaIndexBuffer = create_buffer(GetTotalSizeToCreate * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+    _megaIndexBuffer = create_buffer(GetTotalSizeToCreate * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT , VMA_MEMORY_USAGE_GPU_ONLY);
 
 
     immediate_submit([&](VkCommandBuffer cmd) {
