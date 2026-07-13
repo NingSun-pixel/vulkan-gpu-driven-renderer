@@ -45,25 +45,25 @@ void main()
     uint i = gl_GlobalInvocationID.x; //拿到当前线程ID
     if (i >= pc.count) return;                    // 大于ID的线程留空
     
-    commands[i].instanceCount = 1u;
-    // mat4 m = pc.viewproj * objectBuffer.objects[i].render_matrix;
-    // vec3 origin  = objectBuffer.objects[i].boundsOriginRadius.xyz;
-    // vec3 extents = objectBuffer.objects[i].boundsExtents.xyz;
+    //commands[i].instanceCount = 1u;
+    mat4 m = pc.viewproj * objectBuffer.objects[i].render_matrix;
+    vec3 origin  = objectBuffer.objects[i].boundsOriginRadius.xyz;
+    vec3 extents = objectBuffer.objects[i].boundsExtents.xyz;
 
-    // const vec3 corners[8] = vec3[8](
-    //     vec3(1,1,1),vec3(1,1,-1),vec3(1,-1,1),vec3(1,-1,-1),
-    //     vec3(-1,1,1),vec3(-1,1,-1),vec3(-1,-1,1),vec3(-1,-1,-1));
+    const vec3 corners[8] = vec3[8](
+        vec3(1,1,1),vec3(1,1,-1),vec3(1,-1,1),vec3(1,-1,-1),
+        vec3(-1,1,1),vec3(-1,1,-1),vec3(-1,-1,1),vec3(-1,-1,-1));
 
-    // vec3 mn = vec3(1.5), mx = vec3(-1.5);
-    // bool keep = false;
-    // for (int c=0;c<8;c++){
-    //     vec4 v = m * vec4(origin + corners[c]*extents, 1.0);
-    //     if (v.w <= 0.0) { keep = true; break; }   // ★ 移植 CPU 的保守保留（跨近平面）
-    //     v.xyz /= v.w;
-    //     mn = min(mn, v.xyz); mx = max(mx, v.xyz);
-    // }
-    // bool visible = keep ||
-    //     !(mn.z>1.0 || mx.z<0.0 || mn.x>1.0 || mx.x<-1.0 || mn.y>1.0 || mx.y<-1.0); // 照搬 is_visible 判定
+    vec3 mn = vec3(1.5), mx = vec3(-1.5);
+    bool keep = false;
+    for (int c=0;c<8;c++){
+        vec4 v = m * vec4(origin + corners[c]*extents, 1.0);
+        if (v.w <= 0.0) { keep = true; break; }   // ★ 移植 CPU 的保守保留（跨近平面）
+        v.xyz /= v.w;
+        mn = min(mn, v.xyz); mx = max(mx, v.xyz);
+    }
+    bool visible = keep ||
+        !(mn.z>1.0 || mx.z<0.0 || mn.x>1.0 || mx.x<-1.0 || mn.y>1.0 || mx.y<-1.0); // 照搬 is_visible 判定
 
-    // commands[i].instanceCount = visible ? 1u : 0u;
+    commands[i].instanceCount = visible ? 1u : 0u;
 }

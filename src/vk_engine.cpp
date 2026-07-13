@@ -1015,6 +1015,12 @@ void VulkanEngine::draw_init()
         if (instanceCount == 0) return;
         const RenderObject& r = *rep;
 
+        if (groups.empty() || r.material != groups.back().material)
+            groups.push_back({ r.material, (uint32_t)commands.size(), (uint32_t)instanceCount });  // ← offset/count 都错
+        else
+            groups.back().cmdCount += instanceCount;
+
+
         for (int i = 0; i < instanceCount; i++)
         {
             commands.push_back({
@@ -1028,10 +1034,7 @@ void VulkanEngine::draw_init()
             stats.drawcall_count++;
             stats.triangle_count += r.indexCount / 3;
         }
-        if (groups.empty() || r.material != groups.back().material)
-            groups.push_back({ r.material, (uint32_t)commands.size() - 1, (uint32_t)instanceCount });  // ← offset/count 都错
-        else
-            groups.back().cmdCount += instanceCount;
+
         };
 
     rep = &mainDrawContext.OpaqueSurfaces[opaque_draws[0]];
@@ -1048,7 +1051,7 @@ void VulkanEngine::draw_init()
 
     flush();   // ★ 别忘了最后一批
 
-    size_t bytes = commands.size() * sizeof(VkDrawIndexedIndirectCommand);
+    size_t bytes = (commands.size()) * sizeof(VkDrawIndexedIndirectCommand);
     indirectBuf = create_buffer(bytes,
         VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
         | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,        // STORAGE 是给阶段4 compute 写用，现在加上无妨
