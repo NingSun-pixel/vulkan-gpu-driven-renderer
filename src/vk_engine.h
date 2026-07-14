@@ -65,6 +65,7 @@ struct GPUSceneData {
 };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
+constexpr bool bUseValidationLayers = true;
 
 //
 //// base class for a renderable dynamic object
@@ -334,3 +335,5 @@ private:
 
 	void init_default_data();
 };
+
+extern VulkanEngine* loadedEngine;

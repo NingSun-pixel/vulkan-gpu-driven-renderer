@@ -13,6 +13,7 @@ add_executable (engine
   vk_pipelines.cpp
   vk_engine.h
   vk_engine.cpp
+  vk_engine_init.cpp
   vk_loader.h
   vk_loader.cpp
   camera.cpp
