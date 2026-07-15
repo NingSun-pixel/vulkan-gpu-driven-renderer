@@ -25,6 +25,8 @@
 #include <iostream>
 #include <set>
 
+#pragma region bufferfunction
+
 //open a space to store the data,VMA = Vulkan Memory Allocator
 AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)
 {
@@ -51,6 +53,8 @@ void VulkanEngine::destroy_buffer(const AllocatedBuffer& buffer)
 {
     vmaDestroyBuffer(_allocator, buffer.buffer, buffer.allocation);
 }
+
+#pragma endregion
 
 //从引用数组和顶点数组里还原出mesh
 GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices)
@@ -101,6 +105,7 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
     return newSurface;
 }
 
+//把indexbuffer合成一个大buffer
 void VulkanEngine::build_mega_index_buffer(std::vector<std::shared_ptr<MeshAsset>>& allMeshes) {
     //allmeshes
     uint32_t AllIndexCountBefore = 0;
@@ -242,6 +247,8 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
     vkDestroyShaderModule(engine->_device, meshVertexShader, nullptr);
 }
 
+#pragma region image
+
 AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped)
 {
     AllocatedImage newImage;
@@ -343,3 +350,4 @@ void VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& f
 
     VK_CHECK(vkWaitForFences(_device, 1, &_immFence, true, 9999999999));
 }
+#pragma endregion

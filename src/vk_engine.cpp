@@ -146,9 +146,6 @@ bool is_visible(const RenderObject& obj, const glm::mat4& viewproj) {
 }
 
 
-//cull compute shader draw
-//对改造后的GPUObject数据补全，vkCmdPushConstants(viewproj, count)的补全，链接上command，还有bind建立
-
 void VulkanEngine::cleanup()
 {
     if (_isInitialized) {
