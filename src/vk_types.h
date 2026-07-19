@@ -43,10 +43,16 @@ struct Vertex {
     glm::vec4 color;
 };
 
+
 // holds the resources needed for a mesh
 struct GPUMeshBuffers {
 
     AllocatedBuffer indexBuffer;
+    AllocatedBuffer vertexBuffer;
+    VkDeviceAddress vertexBufferAddress;
+};
+
+struct GPULineBuffers {
     AllocatedBuffer vertexBuffer;
     VkDeviceAddress vertexBufferAddress;
 };

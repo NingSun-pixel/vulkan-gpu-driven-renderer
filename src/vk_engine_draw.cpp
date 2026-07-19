@@ -37,7 +37,7 @@ void VulkanEngine::draw_Cull(VkCommandBuffer cmd)
 
     //差这里的data
     CullPush pc{};
-    pc.viewproj = sceneData.viewproj;
+    pc.viewproj = _cullViewProj;
     pc.count = (uint32_t)opaque_draws.size();   // ★ 用 uint，不是塞进 float
     vkCmdPushConstants(cmd, _cullPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CullPush), &pc);
     vkCmdDispatch(cmd, (pc.count + 63) / 64, 1, 1); // 整数取整，别用 float
@@ -61,6 +61,7 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd)
 
 void VulkanEngine::draw_init()
 {
+    if (!_freezeCull) _cullViewProj = sceneData.viewproj;
     opaque_draws.reserve(mainDrawContext.OpaqueSurfaces.size());
 
 
@@ -100,7 +101,7 @@ void VulkanEngine::draw_init()
             glm::vec4(mainDrawContext.OpaqueSurfaces[s].bounds.extents,1) });
     for (auto& s : mainDrawContext.TransparentSurfaces) objects.push_back({ s.transform, s.vertexBufferAddress });
 
-    // 4b. 建 SSBO
+    // 4b. 建 SSBO,Obj(顶点数据)
     AllocatedBuffer objectBuffer = create_buffer(objects.size() * sizeof(GPUObjectData),
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
     get_current_frame()._deletionQueue.push_function([=, this]() { destroy_buffer(objectBuffer); });
@@ -202,10 +203,27 @@ void VulkanEngine::draw_init()
     }
 }
 
+
 void VulkanEngine::draw_clear()
 {
     opaque_draws.clear();
     groups.clear();
+}
+
+void VulkanEngine::draw_line(VkCommandBuffer cmd)
+{
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _linePipeline);
+    GPULineBuffers lineBuffer = PushVertex();
+    //delete the rectangle data on engine shutdown
+    get_current_frame()._deletionQueue.push_function([lineBuffer, this]() {
+        destroy_buffer(lineBuffer.vertexBuffer);
+        });
+
+    LinePush pc{};
+    pc.viewproj = sceneData.viewproj;
+    pc.vertexBufferAddress = lineBuffer.vertexBufferAddress;
+    vkCmdPushConstants(cmd, _linePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(LinePush), &pc);
+    vkCmdDraw(cmd, (uint32_t)mainDrawContext.OpaqueSurfaces.size() * 24, 1, 0, 0);
 }
 
 void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
@@ -324,6 +342,10 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     for (size_t j = 0; j < mainDrawContext.TransparentSurfaces.size(); j++)
         drawTranparent(mainDrawContext.TransparentSurfaces[j],
             opaque_draws.size() + j);      // transparent：接在 opaque 后面
+
+
+
+    draw_line(cmd);
 
     vkCmdEndRendering(cmd);
     vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, get_current_frame()._timestampPool, 1);
@@ -467,4 +489,103 @@ void VulkanEngine::update_scene()
     sceneData.sunlightColor = glm::vec4(1.f);
     sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
 
+}
+
+
+GPULineBuffers VulkanEngine::PushVertex()
+{
+    std::array<glm::vec3, 8> corners{
+    glm::vec3 { 1, 1, 1 },
+    glm::vec3 { 1, 1, -1 },
+    glm::vec3 { 1, -1, 1 },
+    glm::vec3 { 1, -1, -1 },
+    glm::vec3 { -1, 1, 1 },
+    glm::vec3 { -1, 1, -1 },
+    glm::vec3 { -1, -1, 1 },
+    glm::vec3 { -1, -1, -1 },
+    };
+    int line[24] = {
+    0,1,
+    0,2,
+    4,5,
+    4,6,
+    0,4,
+    1,5,
+    2,6,
+    3,7,
+    2,3,
+    6,7,
+    1,3,
+    5,7 };
+
+    std::vector<glm::vec4> lineVerts;
+    lineVerts.reserve(mainDrawContext.OpaqueSurfaces.size() * 24);
+    auto LineVertexPush = [&](const RenderObject& obj) {
+
+
+        glm::mat4 matrix = obj.transform;
+        float xMax = 0, xMin = 0, yMax = 0, yMin = 0, zMax = 0, zMin = 0;
+
+        glm::vec4 Cube[8] = {};
+
+        for (int c = 0; c < 8; c++) {
+            // project each corner into world space
+            Cube[c] = matrix * glm::vec4(obj.bounds.origin + (corners[c] * obj.bounds.extents), 1.f);
+            //transfer form Obj AABB to world AABB
+            if (c == 0)
+            {
+                xMax = Cube[c].x;
+                xMin = Cube[c].x;
+                yMax = Cube[c].y;
+                yMin = Cube[c].y;
+                zMax = Cube[c].z;
+                zMin = Cube[c].z;
+            }
+            else {
+                xMax = glm::max(xMax, Cube[c].x);
+                xMin = glm::min(xMin, Cube[c].x);
+                yMax = glm::max(yMax, Cube[c].y);
+                yMin = glm::min(yMin, Cube[c].y);
+                zMax = glm::max(zMax, Cube[c].z);
+                zMin = glm::min(zMin, Cube[c].z);
+            }
+        }
+
+        std::array<glm::vec3, 8> worldCorners{
+        glm::vec3 { xMax, yMax, zMax },
+        glm::vec3 { xMax, yMax, zMin },
+        glm::vec3 { xMax, yMin, zMax },
+        glm::vec3 { xMax, yMin, zMin },
+        glm::vec3 { xMin, yMax, zMax },
+        glm::vec3 { xMin, yMax, zMin },
+        glm::vec3 { xMin, yMin, zMax },
+        glm::vec3 { xMin, yMin, zMin },
+        };
+
+        for (auto i : line)
+            lineVerts.push_back(glm::vec4(worldCorners[i],1.0f));
+    };
+
+    for (auto& obj : mainDrawContext.OpaqueSurfaces)
+    {
+        LineVertexPush(obj);
+    }
+    //float xMax = 1, xMin = -1, yMax = 1, yMin = -1, zMax = 1, zMin = -1;
+    //std::array<glm::vec3, 8> worldCornersTest{
+    //    glm::vec3 { xMax, yMax, zMax },
+    //    glm::vec3 { xMax, yMax, zMin },
+    //    glm::vec3 { xMax, yMin, zMax },
+    //    glm::vec3 { xMax, yMin, zMin },
+    //    glm::vec3 { xMin, yMax, zMax },
+    //    glm::vec3 { xMin, yMax, zMin },
+    //    glm::vec3 { xMin, yMin, zMax },
+    //    glm::vec3 { xMin, yMin, zMin },
+    //    };
+
+    //for (auto i : line)
+    //    lineVerts.push_back(glm::vec4(worldCornersTest[i], 1.0f));
+
+    GPULineBuffers LineBuffer;
+    LineBuffer = uploadLine(lineVerts);
+    return LineBuffer;
 }

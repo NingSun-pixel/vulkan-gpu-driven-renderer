@@ -144,6 +144,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
                 vtx.color = glm::vec4(vtx.normal, 1.f);
             }
         }
+        //1mesh for a buffer
         newmesh.meshBuffers = engine->uploadMesh(indices, vertices);
 
         meshes.emplace_back(std::make_shared<MeshAsset>(std::move(newmesh)));
@@ -504,6 +505,17 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
             else {
                 newSurface.material = materials[0];
             }
+            // 求这个 surface 的局部 AABB
+            glm::vec3 minpos = vertices[initial_vtx].position;
+            glm::vec3 maxpos = vertices[initial_vtx].position;
+            for (size_t i = initial_vtx; i < vertices.size(); i++) {
+                minpos = glm::min(minpos, vertices[i].position);
+                maxpos = glm::max(maxpos, vertices[i].position);
+            }
+            newSurface.bounds.origin = (maxpos + minpos) / 2.f;
+            newSurface.bounds.extents = (maxpos - minpos) / 2.f;
+            newSurface.bounds.sphereRadius = glm::length(newSurface.bounds.extents);
+
             newmesh->surfaces.push_back(newSurface);
         }
         newmesh->meshBuffers = engine->uploadMesh(indices, vertices);

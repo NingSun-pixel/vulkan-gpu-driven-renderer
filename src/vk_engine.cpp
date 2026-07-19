@@ -377,6 +377,12 @@ void VulkanEngine::run()
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
+        const ImGuiIO& io = ImGui::GetIO();
+        ImGui::SetNextWindowPos(
+            ImVec2(io.DisplaySize.x - 10, 10),   // x=屏幕右边缘往里 10,y=顶部往下 10
+            ImGuiCond_Always,
+            ImVec2(1.0f, 0.0f));                  // pivot=(1,0) → 坐标指的是窗口右上角
+        
         ImGui::Begin("Stats");
 
         ImGui::Text("frametime %f ms", stats.frametime_CPU);
@@ -395,19 +401,25 @@ void VulkanEngine::run()
 
         ImGui::End();
 
-        if (ImGui::Begin("background")) {
+        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);   // (10,10)=离左上角留点边距
+        if (ImGui::Begin("Settings")) {
             ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
             ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
 
-            ImGui::Text("Selected effect: ", selected.name);
 
-            ImGui::SliderInt("Effect Index", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);
 
-            ImGui::InputFloat4("data1", (float*)&selected.data.data1);
-            ImGui::InputFloat4("data2", (float*)&selected.data.data2);
-            ImGui::InputFloat4("data3", (float*)&selected.data.data3);
-            ImGui::InputFloat4("data4", (float*)&selected.data.data4);
+            ImGui::SeparatorText("Culling");
+            ImGui::Checkbox("Freeze Cull Frustum", &_freezeCull);
+            if (ImGui::CollapsingHeader("Background Effect")) {
+                ImGui::Text("Selected: %s", selected.name);
+                ImGui::SliderInt("Effect Index", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);
+                ImGui::InputFloat4("data1", (float*)&selected.data.data1);
+                ImGui::InputFloat4("data2", (float*)&selected.data.data2);
+                ImGui::InputFloat4("data3", (float*)&selected.data.data3);
+                ImGui::InputFloat4("data4", (float*)&selected.data.data4);
+            }
         }
+
         ImGui::End();
 
         ImGui::Render();
@@ -434,7 +446,7 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
         RenderObject def;
         def.indexCount = s.count;
         def.firstIndex = s.startIndex + mesh->baseIndex;
-        def.indexBuffer = loadedEngine->_megaIndexBuffer.buffer;//mesh->meshBuffers.indexBuffer.buffer;
+        def.indexBuffer = loadedEngine->_megaIndexBuffer.buffer;
         def.material = &s.material->data;
         def.bounds = s.bounds;
         def.transform = nodeMatrix;

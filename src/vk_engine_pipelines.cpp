@@ -108,6 +108,7 @@ void VulkanEngine::init_pipelines()
 {
     init_background_pipelines();
     init_Cull_pipelines();
+    init_Line_pipelines();
     metalRoughMaterial.build_pipelines(this);
 }
 
@@ -190,6 +191,54 @@ void VulkanEngine::init_background_pipelines()
         vkDestroyPipeline(_device, gradient.pipeline, nullptr);
         });
 }
+void VulkanEngine::init_Line_pipelines()
+{
+    VkShaderModule meshFragShader;
+    if (!vkutil::load_shader_module("../../shaders/Line.frag.spv", this->_device, &meshFragShader)) {
+        fmt::println("Error when building the triangle fragment shader module");
+    }
+
+    VkShaderModule meshVertexShader;
+    if (!vkutil::load_shader_module("../../shaders/Line.vert.spv", this->_device, &meshVertexShader)) {
+        fmt::println("Error when building the triangle vertex shader module");
+    }
+
+    VkPushConstantRange matrixRange{};
+    matrixRange.offset = 0;
+    matrixRange.size = sizeof(GPUDrawPushConstants);
+    matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkPipelineLayoutCreateInfo line_layout_info = vkinit::pipeline_layout_create_info();
+    line_layout_info.setLayoutCount = 0;
+    line_layout_info.pSetLayouts = nullptr;
+    line_layout_info.pPushConstantRanges = &matrixRange;
+    line_layout_info.pushConstantRangeCount = 1;
+
+    VkPipelineLayout newLayout;
+    VK_CHECK(vkCreatePipelineLayout(_device, &line_layout_info, nullptr, &newLayout));
+
+    PipelineBuilder pipelineBuilder;
+    pipelineBuilder.set_shaders(meshVertexShader, meshFragShader);
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.set_multisampling_none();
+    pipelineBuilder.disable_blending();
+    pipelineBuilder.disable_depthtest();
+
+    pipelineBuilder.set_color_attachment_format(this->_drawImage.imageFormat);
+    pipelineBuilder.set_depth_format(this->_depthImage.imageFormat);
+
+    // use the triangle layout we created
+    pipelineBuilder._pipelineLayout = newLayout;
+
+    // finally build the pipeline
+    _linePipeline = pipelineBuilder.build_pipeline(this->_device);
+
+    _linePipelineLayout = newLayout;
+    vkDestroyShaderModule(this->_device, meshFragShader, nullptr);
+    vkDestroyShaderModule(this->_device, meshVertexShader, nullptr);
+}
 
 //Cull Compute shader
 void VulkanEngine::init_Cull_pipelines()
@@ -251,6 +300,79 @@ void VulkanEngine::init_Cull_pipelines()
 }
 
 
+
+void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
+{
+    VkShaderModule meshFragShader;
+    if (!vkutil::load_shader_module("../../shaders/mesh.frag.spv", engine->_device, &meshFragShader)) {
+        fmt::println("Error when building the triangle fragment shader module");
+    }
+
+    VkShaderModule meshVertexShader;
+    if (!vkutil::load_shader_module("../../shaders/meshGPUDriven.vert.spv", engine->_device, &meshVertexShader)) {
+        fmt::println("Error when building the triangle vertex shader module");
+    }
+
+    VkPushConstantRange matrixRange{};
+    matrixRange.offset = 0;
+    matrixRange.size = sizeof(GPUDrawPushConstants);
+    matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    DescriptorLayoutBuilder layoutBuilder;
+    layoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    layoutBuilder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    layoutBuilder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+    materialLayout = layoutBuilder.build(engine->_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+
+    VkDescriptorSetLayout layouts[] = { engine->_gpuSceneDataDescriptorLayout,
+        materialLayout,engine->_objectDataDescriptorLayout };
+
+    VkPipelineLayoutCreateInfo mesh_layout_info = vkinit::pipeline_layout_create_info();
+    mesh_layout_info.setLayoutCount = 3;
+    mesh_layout_info.pSetLayouts = layouts;
+    mesh_layout_info.pPushConstantRanges = &matrixRange;
+    mesh_layout_info.pushConstantRangeCount = 1;
+
+    VkPipelineLayout newLayout;
+    VK_CHECK(vkCreatePipelineLayout(engine->_device, &mesh_layout_info, nullptr, &newLayout));
+
+    opaquePipeline.layout = newLayout;
+    transparentPipeline.layout = newLayout;
+
+    // build the stage-create-info for both vertex and fragment stages. This lets
+    // the pipeline know the shader modules per stage
+    PipelineBuilder pipelineBuilder;
+    pipelineBuilder.set_shaders(meshVertexShader, meshFragShader);
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.set_multisampling_none();
+    pipelineBuilder.disable_blending();
+    pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+
+    //render format
+    pipelineBuilder.set_color_attachment_format(engine->_drawImage.imageFormat);
+    pipelineBuilder.set_depth_format(engine->_depthImage.imageFormat);
+
+    // use the triangle layout we created
+    pipelineBuilder._pipelineLayout = newLayout;
+
+    // finally build the pipeline
+    opaquePipeline.pipeline = pipelineBuilder.build_pipeline(engine->_device);
+
+    // create the transparent variant
+    pipelineBuilder.enable_blending_additive();
+
+    pipelineBuilder.enable_depthtest(false, VK_COMPARE_OP_GREATER_OR_EQUAL);
+
+    transparentPipeline.pipeline = pipelineBuilder.build_pipeline(engine->_device);
+
+    vkDestroyShaderModule(engine->_device, meshFragShader, nullptr);
+    vkDestroyShaderModule(engine->_device, meshVertexShader, nullptr);
+}
+
+
 void VulkanEngine::init_imgui()
 {
     // 1: create descriptor pool for IMGUI
@@ -282,7 +404,7 @@ void VulkanEngine::init_imgui()
 
     // this initializes the core structures of imgui
     ImGui::CreateContext();
-
+    //ImGui::Checkbox("Freeze Cull Frustum", &_freezeCull);
     // this initializes imgui for SDL
     ImGui_ImplSDL2_InitForVulkan(_window);
 

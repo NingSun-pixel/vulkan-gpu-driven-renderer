@@ -95,10 +95,18 @@ struct GPUObjectData {
 	glm::vec4 extents;      
 };
 
+
+
 struct CullPush {
 	glm::mat4 viewproj;   // 偏移 0，占 64
 	uint32_t  count;      // 偏移 64，uint ← 和 shader 的 uint count 对上
 };
+
+struct LinePush {
+	glm::mat4 viewproj;   // 偏移 0，占 64
+	VkDeviceAddress vertexBufferAddress;    // 偏移 64，uint ← 和 shader 的 uint count 对上
+};
+
 
 struct MatGroup { 
 	MaterialInstance* material; 
@@ -191,8 +199,10 @@ public:
 	VkPipeline _cullPipeline;
 	VkPipelineLayout _cullPipelineLayout;
 
-	//VkPipelineLayout _trianglePipelineLayout;
-	//VkPipeline _trianglePipeline;
+
+
+	VkPipelineLayout _linePipelineLayout;
+	VkPipeline _linePipeline;
 
 	bool resize_requested;
 	//initializes everything in the engine
@@ -210,11 +220,12 @@ public:
 
 	void draw_background(VkCommandBuffer cmd);
 	void draw_init();
+	void init_line();
 	void draw_clear();
 
 
 	void draw_Cull(VkCommandBuffer cmd);
-
+	void draw_line(VkCommandBuffer cmd);
 	void draw_geometry(VkCommandBuffer cmd);
 
 	// --- omitted ---
@@ -260,6 +271,8 @@ public:
 	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
 	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
 	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+	GPULineBuffers uploadLine(std::span<glm::vec4> vertices);
+	GPULineBuffers PushVertex();
 	//buffer
 	void destroy_buffer(const AllocatedBuffer& buffer);
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
@@ -275,6 +288,8 @@ public:
 	GPUSceneData sceneData;
 
 	VkDescriptorSetLayout _objectDataDescriptorLayout;
+	VkDescriptorSetLayout _lineObjectDataDescriptorLayout;
+
 	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
 	VkDescriptorSetLayout _singleImageDescriptorLayout;
 
@@ -318,11 +333,16 @@ public:
 	VkDescriptorSet objectDescriptor;
 	VkDescriptorSet commandDescriptor;
 	void name_buffer(VkBuffer buf, const char* name);
+
+	//freeze View
+	glm::mat4 _cullViewProj;      // 喂给 compute 的剔除矩阵
+	bool      _freezeCull = false;
 private:
 	void init_descriptors();
 	void init_pipelines();
 	void init_background_pipelines();
 	void init_Cull_pipelines();
+	void init_Line_pipelines();
 	void init_vulkan();
 	void init_swapchain();
 	void resize_swapchain();
