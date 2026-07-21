@@ -337,6 +337,8 @@ public:
 	//freeze View
 	glm::mat4 _cullViewProj;      // 喂给 compute 的剔除矩阵
 	bool      _freezeCull = false;
+	bool      _ShowAABB = true;
+
 private:
 	void init_descriptors();
 	void init_pipelines();

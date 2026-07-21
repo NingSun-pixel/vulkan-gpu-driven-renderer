@@ -40,7 +40,7 @@ void VulkanEngine::init_descriptors()
     {
         DescriptorLayoutBuilder builder;
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);   // binding 0 = SSBO
-        _CommandDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
+        _CommandDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT);
     }
 
     //create a descriptor pool that will hold 10 sets with 1 image each
@@ -191,6 +191,8 @@ void VulkanEngine::init_background_pipelines()
         vkDestroyPipeline(_device, gradient.pipeline, nullptr);
         });
 }
+
+
 void VulkanEngine::init_Line_pipelines()
 {
     VkShaderModule meshFragShader;
@@ -208,9 +210,10 @@ void VulkanEngine::init_Line_pipelines()
     matrixRange.size = sizeof(GPUDrawPushConstants);
     matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+    VkDescriptorSetLayout layouts[] = { _CommandDataDescriptorLayout };
     VkPipelineLayoutCreateInfo line_layout_info = vkinit::pipeline_layout_create_info();
-    line_layout_info.setLayoutCount = 0;
-    line_layout_info.pSetLayouts = nullptr;
+    line_layout_info.setLayoutCount = 1;
+    line_layout_info.pSetLayouts = layouts;
     line_layout_info.pPushConstantRanges = &matrixRange;
     line_layout_info.pushConstantRangeCount = 1;
 
@@ -262,7 +265,7 @@ void VulkanEngine::init_Cull_pipelines()
 
     VK_CHECK(vkCreatePipelineLayout(_device, &cullObjLayout, nullptr, &_cullPipelineLayout));
 
-
+        
     VkShaderModule cullComputeShader;
     if (!vkutil::load_shader_module("../../shaders/Cull.comp.spv", _device, &cullComputeShader)) {
         fmt::print("Error when building the compute shader \n");

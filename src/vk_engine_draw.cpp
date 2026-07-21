@@ -219,6 +219,8 @@ void VulkanEngine::draw_line(VkCommandBuffer cmd)
         destroy_buffer(lineBuffer.vertexBuffer);
         });
 
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _linePipelineLayout, 0, 1, &commandDescriptor, 0, nullptr);
+
     LinePush pc{};
     pc.viewproj = sceneData.viewproj;
     pc.vertexBufferAddress = lineBuffer.vertexBufferAddress;
@@ -344,8 +346,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
             opaque_draws.size() + j);      // transparent：接在 opaque 后面
 
 
-
-    draw_line(cmd);
+    if(_ShowAABB)
+        draw_line(cmd);
 
     vkCmdEndRendering(cmd);
     vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, get_current_frame()._timestampPool, 1);
@@ -566,24 +568,10 @@ GPULineBuffers VulkanEngine::PushVertex()
             lineVerts.push_back(glm::vec4(worldCorners[i],1.0f));
     };
 
-    for (auto& obj : mainDrawContext.OpaqueSurfaces)
+    for (auto& idx : opaque_draws)
     {
-        LineVertexPush(obj);
+        LineVertexPush(mainDrawContext.OpaqueSurfaces[idx]);
     }
-    //float xMax = 1, xMin = -1, yMax = 1, yMin = -1, zMax = 1, zMin = -1;
-    //std::array<glm::vec3, 8> worldCornersTest{
-    //    glm::vec3 { xMax, yMax, zMax },
-    //    glm::vec3 { xMax, yMax, zMin },
-    //    glm::vec3 { xMax, yMin, zMax },
-    //    glm::vec3 { xMax, yMin, zMin },
-    //    glm::vec3 { xMin, yMax, zMax },
-    //    glm::vec3 { xMin, yMax, zMin },
-    //    glm::vec3 { xMin, yMin, zMax },
-    //    glm::vec3 { xMin, yMin, zMin },
-    //    };
-
-    //for (auto i : line)
-    //    lineVerts.push_back(glm::vec4(worldCornersTest[i], 1.0f));
 
     GPULineBuffers LineBuffer;
     LineBuffer = uploadLine(lineVerts);

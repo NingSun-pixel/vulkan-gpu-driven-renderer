@@ -251,8 +251,8 @@ void VulkanEngine::draw()
     VkBufferMemoryBarrier2 bufBarrier{ .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2 };
     bufBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     bufBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-    bufBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-    bufBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+    bufBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+    bufBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
     bufBarrier.buffer = indirectBuf.buffer;
     bufBarrier.offset = 0;
     bufBarrier.size = VK_WHOLE_SIZE;
@@ -410,6 +410,7 @@ void VulkanEngine::run()
 
             ImGui::SeparatorText("Culling");
             ImGui::Checkbox("Freeze Cull Frustum", &_freezeCull);
+            ImGui::Checkbox("ShowAABB", &_ShowAABB);
             if (ImGui::CollapsingHeader("Background Effect")) {
                 ImGui::Text("Selected: %s", selected.name);
                 ImGui::SliderInt("Effect Index", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);
