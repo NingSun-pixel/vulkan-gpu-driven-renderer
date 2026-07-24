@@ -30,6 +30,14 @@ layout(set = 0, binding = 0, std430) readonly buffer ObjectBuffer
 	ObjectData objects[];
 }objectBuffer;
 
+struct AABBBound{
+    float xMax; 
+    float xMin; 
+    float yMax; 
+    float yMin; 
+    float zMax; 
+    float zMin;
+};
 
 struct IndirectCmd {
     uint indexCount, instanceCount, firstIndex;
@@ -40,30 +48,102 @@ layout(set=1, binding=0, std430) buffer CmdBuffer { IndirectCmd commands[]; };
 
 layout(push_constant) uniform Push { mat4 viewproj; uint count; } pc;
 
+// m[col] 是列;元素 (行r,列c) = m[c][r] → 第 r 行 = (m[0][r],m[1][r],m[2][r],m[3][r])
+void extractPlanes(mat4 m, out vec4 planes[6]) {
+    vec4 row0 = vec4(m[0][0], m[1][0], m[2][0], m[3][0]);
+    vec4 row1 = vec4(m[0][1], m[1][1], m[2][1], m[3][1]);
+    vec4 row2 = vec4(m[0][2], m[1][2], m[2][2], m[3][2]);
+    vec4 row3 = vec4(m[0][3], m[1][3], m[2][3], m[3][3]);
+
+    planes[0] = row3 + row0;   // 左
+    planes[1] = row3 - row0;   // 右
+    planes[2] = row3 + row1;   // 下
+    planes[3] = row3 - row1;   // 上
+    planes[4] = row2;          // 近 (Vulkan z≥0)
+    planes[5] = row3 - row2;   // 远
+
+    // 归一化:法线单位长,dot(p.xyz,点)+p.w 才是"真实距离"
+    for (int i = 0; i < 6; i++)
+        planes[i] /= length(planes[i].xyz);
+}
+
+
 void main() 
 {
     uint i = gl_GlobalInvocationID.x; //拿到当前线程ID
     if (i >= pc.count) return;                    // 大于ID的线程留空
     
-    //commands[i].instanceCount = 1u;
-    mat4 m = pc.viewproj * objectBuffer.objects[i].render_matrix;
+    const vec3 corners[8] = vec3[8](
+    vec3(1,1,1),vec3(1,1,-1),vec3(1,-1,1),vec3(1,-1,-1),
+    vec3(-1,1,1),vec3(-1,1,-1),vec3(-1,-1,1),vec3(-1,-1,-1));
+
+    mat4 m = objectBuffer.objects[i].render_matrix;
     vec3 origin  = objectBuffer.objects[i].boundsOriginRadius.xyz;
     vec3 extents = objectBuffer.objects[i].boundsExtents.xyz;
+    //commands[i].instanceCount = 1u;
+    //通过proj算出6个面
+    //通过6个面的数据拿到距离
+    //AABB需要重新算一次，拿到当前空间的AABB
+    //X,Y,Z分别找到距离平面最近的分支，拿到最近的点
+    //通过最近的点距离是+是-，判断包围盒是否再视线内
+    //赋值
+    vec4 planes[6];
+    vec4 Cube[8];
 
-    const vec3 corners[8] = vec3[8](
-        vec3(1,1,1),vec3(1,1,-1),vec3(1,-1,1),vec3(1,-1,-1),
-        vec3(-1,1,1),vec3(-1,1,-1),vec3(-1,-1,1),vec3(-1,-1,-1));
+    extractPlanes(pc.viewproj,planes);
 
-    vec3 mn = vec3(1.5), mx = vec3(-1.5);
-    bool keep = false;
-    for (int c=0;c<8;c++){
-        vec4 v = m * vec4(origin + corners[c]*extents, 1.0);
-        if (v.w <= 0.0) { keep = true; break; }   // ★ 移植 CPU 的保守保留（跨近平面）
-        v.xyz /= v.w;
-        mn = min(mn, v.xyz); mx = max(mx, v.xyz);
+    Cube[0] = m * vec4(origin + (corners[0] * extents), 1.f);
+    AABBBound Bound;
+    Bound.xMax = Cube[0].x;
+    Bound.xMin = Cube[0].x;
+    Bound.yMax = Cube[0].y;
+    Bound.yMin = Cube[0].y;
+    Bound.zMax = Cube[0].z;
+    Bound.zMin = Cube[0].z;
+
+    for (int c=1;c<8;c++){
+        Cube[c] = m * vec4(origin + (corners[c] * extents), 1.f);
+        Bound.xMax = max(Bound.xMax, Cube[c].x);
+        Bound.xMin = min(Bound.xMin, Cube[c].x);
+        Bound.yMax = max(Bound.yMax, Cube[c].y);
+        Bound.yMin = min(Bound.yMin, Cube[c].y);
+        Bound.zMax = max(Bound.zMax, Cube[c].z);
+        Bound.zMin = min(Bound.zMin, Cube[c].z);
     }
-    bool visible = keep ||
-        !(mn.z>1.0 || mx.z<0.0 || mn.x>1.0 || mx.x<-1.0 || mn.y>1.0 || mx.y<-1.0); // 照搬 is_visible 判定
+
+    bool visible = true;
+    for (int c=0;c<6;c++){
+        float DisX = planes[c].x > 0 ? Bound.xMax : Bound.xMin;
+        float DisY = planes[c].y > 0 ? Bound.yMax : Bound.yMin;
+        float DisZ = planes[c].z > 0 ? Bound.zMax : Bound.zMin;
+        float Dis = DisX * planes[c].x + DisY * planes[c].y + DisZ * planes[c].z + planes[c].w;
+        if(Dis < 0)
+        {
+            visible = false;
+            break;
+        }
+    }
 
     commands[i].instanceCount = visible ? 1u : 0u;
 }
+
+
+
+    // mat4 m = pc.viewproj * objectBuffer.objects[i].render_matrix;
+    // vec3 origin  = objectBuffer.objects[i].boundsOriginRadius.xyz;
+    // vec3 extents = objectBuffer.objects[i].boundsExtents.xyz;
+
+    // const vec3 corners[8] = vec3[8](
+    //     vec3(1,1,1),vec3(1,1,-1),vec3(1,-1,1),vec3(1,-1,-1),
+    //     vec3(-1,1,1),vec3(-1,1,-1),vec3(-1,-1,1),vec3(-1,-1,-1));
+
+    // vec3 mn = vec3(1.5), mx = vec3(-1.5);
+    // bool keep = false;
+    // for (int c=0;c<8;c++){
+    //     vec4 v = m * vec4(origin + corners[c]*extents, 1.0);
+    //     if (v.w <= 0.0) { keep = true; break; }   // ★ 移植 CPU 的保守保留（跨近平面）
+    //     v.xyz /= v.w;
+    //     mn = min(mn, v.xyz); mx = max(mx, v.xyz);
+    // }
+    // bool visible = keep ||
+    //     !(mn.z>1.0 || mx.z<0.0 || mn.x>1.0 || mx.x<-1.0 || mn.y>1.0 || mx.y<-1.0); // 照搬 is_visible 判定
