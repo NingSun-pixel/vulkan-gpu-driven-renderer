@@ -1,4 +1,4 @@
-#include <camera.h>
+﻿#include <camera.h>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 
@@ -24,9 +24,15 @@ void Camera::processSDLEvent(SDL_Event& e)
         if (e.key.keysym.sym == SDLK_d) { velocity.x = 0; }
     }
 
-    if (e.type == SDL_MOUSEMOTION) {
-        yaw += (float)e.motion.xrel / 200.f;
-        pitch -= (float)e.motion.yrel / 200.f;
+    if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_RIGHT)
+        SDL_SetRelativeMouseMode(SDL_TRUE);   // 锁住+隐藏,鼠标不出界
+    if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_RIGHT)
+        SDL_SetRelativeMouseMode(SDL_FALSE);  // 恢复
+
+    float sens = 0.01f;   // 原来 1/200≈0.005;翻倍到 0.01 明显更跟手
+    if (e.type == SDL_MOUSEMOTION && (e.motion.state & SDL_BUTTON_RMASK)) {
+        yaw += (float)e.motion.xrel * sens;
+        pitch -= (float)e.motion.yrel * sens;
     }
 }
 
