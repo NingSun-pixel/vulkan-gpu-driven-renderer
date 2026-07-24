@@ -224,8 +224,13 @@ void VulkanEngine::draw_line(VkCommandBuffer cmd)
     LinePush pc{};
     pc.viewproj = sceneData.viewproj;
     pc.vertexBufferAddress = lineBuffer.vertexBufferAddress;
+    pc.mode = 0;
     vkCmdPushConstants(cmd, _linePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(LinePush), &pc);
-    vkCmdDraw(cmd, (uint32_t)mainDrawContext.OpaqueSurfaces.size() * 24, 1, 0, 0);
+    vkCmdDraw(cmd, (uint32_t)(mainDrawContext.OpaqueSurfaces.size()-1) * 24, 1, 0, 0);
+
+    pc.mode = 1;
+    vkCmdPushConstants(cmd, _linePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(LinePush), &pc);
+    vkCmdDraw(cmd, (uint32_t)24, 1, (uint32_t)(mainDrawContext.OpaqueSurfaces.size() - 1) * 24, 0);
 }
 
 void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
@@ -572,6 +577,23 @@ GPULineBuffers VulkanEngine::PushVertex()
     {
         LineVertexPush(mainDrawContext.OpaqueSurfaces[idx]);
     }
+
+    //ADD grid of frustum
+    glm::mat4 invVP = glm::inverse(_cullViewProj);   // ★ 用冻结的那个 viewproj
+    // NDC 8 角(Vulkan z∈[0,1]):x,y ∈ {-1,1},z ∈ {0,1}
+    glm::vec3 ndc[8] = {
+        {-1,-1,0},{1,-1,0},{1,1,0},{-1,1,0},   // 近平面
+        {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1},   // 远平面
+    };
+    glm::vec3 frustumCorners[8];
+    for (int i = 0; i < 8; i++) {
+        glm::vec4 w = invVP * glm::vec4(ndc[i], 1.0f);
+        frustumCorners[i] = glm::vec3(w) / w.w;       // ★ 除 w:透视除法反过来
+    }
+
+    //转24个点
+    for (auto i : line)
+        lineVerts.push_back(glm::vec4(frustumCorners[i], 1.0f));
 
     GPULineBuffers LineBuffer;
     LineBuffer = uploadLine(lineVerts);

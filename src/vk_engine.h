@@ -105,6 +105,7 @@ struct CullPush {
 struct LinePush {
 	glm::mat4 viewproj;   // 偏移 0，占 64
 	VkDeviceAddress vertexBufferAddress;    // 偏移 64，uint ← 和 shader 的 uint count 对上
+	int mode;
 };
 
 

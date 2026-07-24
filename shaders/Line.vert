@@ -5,6 +5,8 @@
 
 //#include "input_structures.glsl"
 layout (location = 0) flat out uint vis;
+layout (location = 1) flat out uint mode;
+
 
 struct IndirectCmd {
     uint indexCount, instanceCount, firstIndex;
@@ -17,7 +19,7 @@ layout(buffer_reference, std430) readonly buffer VertexBuffer{
 };
 
 
-layout(push_constant) uniform Push { mat4 viewproj; VertexBuffer vertexBuffer; } pc;
+layout(push_constant) uniform Push { mat4 viewproj; VertexBuffer vertexBuffer; uint mode;} pc;
 
 layout(set=0, binding=0, std430) readonly buffer CmdBuffer { IndirectCmd commands[]; };
 
@@ -26,4 +28,5 @@ void main()
 	uint obj = uint(gl_VertexIndex) / 24u;
 	vis = commands[obj].instanceCount;
 	gl_Position = pc.viewproj * pc.vertexBuffer.position[gl_VertexIndex];
+	mode = pc.mode;
 }

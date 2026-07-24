@@ -207,7 +207,7 @@ void VulkanEngine::init_Line_pipelines()
 
     VkPushConstantRange matrixRange{};
     matrixRange.offset = 0;
-    matrixRange.size = sizeof(GPUDrawPushConstants);
+    matrixRange.size = sizeof(LinePush);
     matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     VkDescriptorSetLayout layouts[] = { _CommandDataDescriptorLayout };
