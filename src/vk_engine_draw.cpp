@@ -226,11 +226,13 @@ void VulkanEngine::draw_line(VkCommandBuffer cmd)
     pc.vertexBufferAddress = lineBuffer.vertexBufferAddress;
     pc.mode = 0;
     vkCmdPushConstants(cmd, _linePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(LinePush), &pc);
-    vkCmdDraw(cmd, (uint32_t)(mainDrawContext.OpaqueSurfaces.size()-1) * 24, 1, 0, 0);
+    vkCmdDraw(cmd, (uint32_t)(mainDrawContext.OpaqueSurfaces.size()) * 24, 1, 0, 0);
 
     pc.mode = 1;
     vkCmdPushConstants(cmd, _linePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(LinePush), &pc);
-    vkCmdDraw(cmd, (uint32_t)24, 1, (uint32_t)(mainDrawContext.OpaqueSurfaces.size() - 1) * 24, 0);
+    vkCmdDraw(cmd, (uint32_t)24, 1, (uint32_t)(mainDrawContext.OpaqueSurfaces.size()) * 24, 0);
+    //vkCmdDraw(cmd, (uint32_t)24, 1, 0, 0);
+
 }
 
 void VulkanEngine::draw_geometry(VkCommandBuffer cmd)

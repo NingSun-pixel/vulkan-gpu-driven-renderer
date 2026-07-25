@@ -13,7 +13,7 @@ void main()
 {
 	if(mode == 0u)
 	{
-		outFragColor = vis > 0u ? vec4(0.0f, 0.0f , 0.0f , 1.0f) : vec4(0.0f, 0.0f , 0.0f , 1.0f);
+		outFragColor = vis > 0u ? vec4(0.0f, 1.0f , 0.0f , 1.0f) : vec4(1.0f, 0.0f , 0.0f , 1.0f);
 	}else{
 		outFragColor = vec4(1.0f, 0.0f , 1.0f , 1.0f);
 	}
