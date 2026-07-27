@@ -85,4 +85,4 @@ Bootstrapped from the excellent [vkguide.dev](https://vkguide.dev) base by [vbla
 ## About
 
 <!-- TODO: one-line differentiator + contact -->
-Graphics programming portfolio project. Contact: yulinsun6920@gmail.com
+Graphics programming portfolio project. Contact: ysun4@tcd.ie
