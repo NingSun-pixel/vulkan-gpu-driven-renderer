@@ -8,6 +8,7 @@
 layout (location = 0) out vec3 outNormal;
 layout (location = 1) out vec3 outColor;
 layout (location = 2) out vec2 outUV;
+layout (location = 3) out vec3 outWorldPos;
 
 struct Vertex {
 	vec3 position;
@@ -41,10 +42,14 @@ void main()
 {
 	ObjectData obj = objectBuffer.objects[gl_InstanceIndex];   // 不再读 PushConstants
 	Vertex v = obj.vertexBuffer.vertices[gl_VertexIndex];        // 取顶点这行几乎不变
-	gl_Position = sceneData.viewproj * obj.render_matrix * vec4(v.position, 1.0);
+	vec4 worldPos = obj.render_matrix * vec4(v.position, 1.0);
+	gl_Position   = sceneData.viewproj * worldPos;   // 原来那行改成用 worldPos
+	outWorldPos   = worldPos.xyz;
 
 	outNormal = (obj.render_matrix * vec4(v.normal, 0.f)).xyz;
 	outColor = v.color.xyz * materialData.colorFactors.xyz;	
 	outUV.x = v.uv_x;
 	outUV.y = v.uv_y;
+
+
 }

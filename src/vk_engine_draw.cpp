@@ -487,7 +487,7 @@ void VulkanEngine::update_scene()
     sceneData.view = view;
     // camera projection
     sceneData.proj = projection;
-
+    sceneData.cameraPos = glm::vec4(glm::vec3(glm::inverse(view)[3]), 1.f);
     // invert the Y direction on projection matrix so that we are more similar
     // to opengl and gltf axis
     sceneData.proj[1][1] *= -1;
