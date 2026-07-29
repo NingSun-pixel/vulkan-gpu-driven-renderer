@@ -42,6 +42,8 @@ void VulkanEngine::init()
     SDL_Init(SDL_INIT_VIDEO);
 
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+    
+
 
     _window = SDL_CreateWindow(
         "Vulkan Engine",
@@ -66,6 +68,12 @@ void VulkanEngine::init()
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(_chosenGPU, &props);
     _timestampPeriod = props.limits.timestampPeriod;
+
+
+
+
+
+
 
     uint32_t n = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(_chosenGPU, &n, nullptr);
@@ -204,6 +212,11 @@ void VulkanEngine::draw()
         vkGetQueryPoolResults(_device, get_current_frame()._timestampPool, 0, 2, sizeof(ts), ts,
             sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
         stats.gpu_ms_geometry = (ts[1] - ts[0]) * _timestampPeriod / 1e6f;  // ns→ms
+
+        uint64_t prims = 0;
+        vkGetQueryPoolResults(_device, get_current_frame()._pipelineStatsPool, 0, 1,
+            sizeof(prims), &prims, sizeof(prims), VK_QUERY_RESULT_64_BIT);
+        stats.triangle_count_GPU = (int)prims;   // ★ 真·剔除后
     }
 
     //the second time you run this frame
@@ -240,6 +253,8 @@ void VulkanEngine::draw()
     VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
 
     vkCmdResetQueryPool(cmd, get_current_frame()._timestampPool, 0, 2);
+    vkCmdResetQueryPool(cmd, get_current_frame()._pipelineStatsPool, 0, 1);
+
     //make the swapchain image into writeable mode before rendering
     vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
@@ -390,6 +405,7 @@ void VulkanEngine::run()
         ImGui::Text("update time %f ms", stats.scene_update_time_CPU);
         ImGui::Text("triangles %i", stats.triangle_count);
         ImGui::Text("draws %i", stats.drawcall_count);
+        ImGui::Text("triangles_GPU %i", stats.triangle_count_GPU);
 
         stats.gpu_ms_history[stats.gpu_ms_offset] = stats.gpu_ms_geometry; // 当前值写到 offset 位置
         stats.gpu_ms_offset = (stats.gpu_ms_offset + 1) % 120;            // 指针前进一格，到 120 绕回 0

@@ -87,7 +87,8 @@ void VulkanEngine::init_vulkan()
     // 在 selector 之前加：
     VkPhysicalDeviceFeatures features10{};
     features10.multiDrawIndirect = VK_TRUE;
-    features10.drawIndirectFirstInstance = VK_TRUE;   // ★ 你 indirect 命令用了 firstInstance!=0，这个也得开
+    features10.drawIndirectFirstInstance = VK_TRUE; 
+    features10.pipelineStatisticsQuery = VK_TRUE;
 
     //use vkbootstrap to select a gpu. 
     //We want a gpu that can write to the SDL surface and supports vulkan 1.3 with the correct features
@@ -150,6 +151,13 @@ void VulkanEngine::init_commands()
         qpInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
         qpInfo.queryCount = 2;                       // 两个槽：geometry 开始 / 结束
         VK_CHECK(vkCreateQueryPool(_device, &qpInfo, nullptr, &_frames[i]._timestampPool));
+
+        VkQueryPoolCreateInfo TriangleInfo{ VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+        TriangleInfo.queryType = VK_QUERY_TYPE_PIPELINE_STATISTICS;
+        TriangleInfo.queryCount = 1;
+        TriangleInfo.pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_PRIMITIVES_BIT;
+        vkCreateQueryPool(_device, &TriangleInfo, nullptr, &_frames[i]._pipelineStatsPool);
+
     }
 
 

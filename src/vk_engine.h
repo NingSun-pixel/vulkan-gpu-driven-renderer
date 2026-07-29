@@ -53,6 +53,7 @@ struct FrameData {
 	DescriptorAllocatorGrowable _frameDescriptors;
 
 	VkQueryPool _timestampPool;
+	VkQueryPool _pipelineStatsPool;
 };
 
 struct GPUSceneData {
@@ -168,6 +169,8 @@ struct EngineStats {
 	float gpu_ms_geometry = 0;
 	float gpu_ms_history[120] = {};
 	int   gpu_ms_offset = 0;
+
+	int triangle_count_GPU = 0;
 };
 
 

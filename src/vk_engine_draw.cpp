@@ -61,6 +61,10 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd)
 
 void VulkanEngine::draw_init()
 {
+    //reset counters
+    stats.drawcall_count = 0;
+    stats.triangle_count = 0;
+
     if (!_freezeCull) _cullViewProj = sceneData.viewproj;
     opaque_draws.reserve(mainDrawContext.OpaqueSurfaces.size());
 
@@ -241,9 +245,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         return;
     }
 
-    //reset counters
-    stats.drawcall_count = 0;
-    stats.triangle_count = 0;
+
     //begin clock
     auto start = std::chrono::system_clock::now();
     //begin a render pass  connected to our draw image
@@ -252,7 +254,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
     VkRenderingInfo renderInfo = vkinit::rendering_info(_windowExtent, &colorAttachment, &depthAttachment);
     vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, get_current_frame()._timestampPool, 0);
-
+    vkCmdBeginQuery(cmd, get_current_frame()._pipelineStatsPool, 0, 0);
     vkCmdBeginRendering(cmd, &renderInfo);
 
     //set dynamic viewport and scissor
@@ -358,6 +360,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
     vkCmdEndRendering(cmd);
     vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, get_current_frame()._timestampPool, 1);
+    vkCmdEndQuery(cmd, get_current_frame()._pipelineStatsPool, 0);
     mainDrawContext.OpaqueSurfaces.clear();
     mainDrawContext.TransparentSurfaces.clear();
 
