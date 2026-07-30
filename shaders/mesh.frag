@@ -36,6 +36,12 @@ vec3 F_Schlick(float HdotV, vec3 F0) {
 
 void main()
 {
+	// float lightValue = max(dot(inNormal, sceneData.sunlightDirection.xyz), 0.1f);
+	
+	// vec3 color = inColor * texture(colorTex,inUV).xyz;
+	// vec3 ambient = color * sceneData.ambientColor.xyz;
+
+	// outFragColor = vec4(color * lightValue *  sceneData.sunlightColor.w + ambient ,1.0f);
     // ---- 组装 PBR 输入 ----
     vec3 N = normalize(inNormal);                              // ★ 修:插值后必须归一化
     vec3 V = normalize(sceneData.cameraPos.xyz - inWorldPos);  // 视线
@@ -44,10 +50,10 @@ void main()
 
     vec3  albedo    = inColor * texture(colorTex, inUV).rgb;
     vec3  mr        = texture(metalRoughTex, inUV).rgb;              // structure.glb 恒 (1,1,1)
-    float metallic  = materialData.metal_rough_factors.x * mr.b;    // 该场景 = 0
+    float metallic  = 0.6;//materialData.metal_rough_factors.x * mr.b;    // 该场景 = 0
     float roughness = clamp(materialData.metal_rough_factors.y * mr.g, 0.05, 1.0); // 该场景 = 0.5
 
-    float NdotL = max(dot(N, L), 0.0);
+    float NdotL = max(dot(N, L), 0.0); 
     float NdotV = max(dot(N, V), 0.0);
     float NdotH = max(dot(N, H), 0.0);
     float HdotV = max(dot(H, V), 0.0);
@@ -68,13 +74,13 @@ void main()
     vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
 
     // ---- 环境项(替换掉原来的 max(...,0.1) 假光 hack)----
-    vec3 ambient = albedo * sceneData.ambientColor.rgb;
+    vec3 ambient = albedo * sceneData.ambientColor.rgb * 5.0;
 
     vec3 color = ambient + Lo;
 
     // ---- 色调映射 + gamma(贴图按 UNORM 加载时需要;若过暗/过亮就注释掉这两行验一下)----
-    color = color / (color + vec3(1.0));      // Reinhard
-    color = pow(color, vec3(1.0 / 2.2));      // 线性 → sRGB
+    //color = color / (color + vec3(1.0));      // Reinhard
+    //color = pow(color, vec3(1.0 / 2.2));      // 线性 → sRGB
 
     outFragColor = vec4(color, 1.0);
 }
