@@ -173,6 +173,7 @@ struct EngineStats {
 	int triangle_count_GPU = 0;
 };
 
+struct PathPoint { glm::vec3 pos; float yaw, pitch; };
 
 class VulkanEngine {
 public:
@@ -186,6 +187,7 @@ public:
 	VkExtent2D _windowExtent{ 1700 , 900 };
 
 	struct SDL_Window* _window{ nullptr };
+
 
 	static VulkanEngine& Get();
 
@@ -343,6 +345,9 @@ public:
 	glm::mat4 _cullViewProj;      // 喂给 compute 的剔除矩阵
 	bool      _freezeCull = false;
 	bool      _ShowAABB = true;
+
+	std::vector<PathPoint> _pathPoints;
+
 
 private:
 	void init_descriptors();

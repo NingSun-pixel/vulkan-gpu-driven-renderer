@@ -436,6 +436,24 @@ void VulkanEngine::run()
                 ImGui::InputFloat4("data4", (float*)&selected.data.data4);
             }
         }
+        ImGui::End();
+
+        if (ImGui::Begin("Camera Path")) {
+            if (ImGui::Button("Capture")) {                              // 抓当前相机
+                _pathPoints.push_back({ mainCamera.position, mainCamera.yaw, mainCamera.pitch });
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Delete Last")) {                         // 弹最后一个
+                if (!_pathPoints.empty()) _pathPoints.pop_back();
+            }
+
+            ImGui::Text("points: %d", (int)_pathPoints.size());
+            for (int i = 0; i < (int)_pathPoints.size(); i++) {          // 列出来,验证用
+                const auto& p = _pathPoints[i];
+                ImGui::Text("[%d] (%.1f, %.1f, %.1f)  yaw %.2f  pitch %.2f",
+                    i, p.pos.x, p.pos.y, p.pos.z, p.yaw, p.pitch);
+            }
+        }
 
         ImGui::End();
 

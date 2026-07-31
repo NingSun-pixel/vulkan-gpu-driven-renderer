@@ -481,7 +481,7 @@ void VulkanEngine::update_scene()
     glm::mat4 view = mainCamera.getViewMatrix();
 
     // camera projection
-    float renderFar = _freezeCull ? 1000.f : 50.f; 
+    float renderFar = _freezeCull ? 10000.f : 300.f; 
     glm::mat4 projection = glm::perspective(glm::radians(70.f),
         (float)_windowExtent.width / (float)_windowExtent.height, renderFar, 1.0f);
     mainDrawContext.OpaqueSurfaces.clear();
