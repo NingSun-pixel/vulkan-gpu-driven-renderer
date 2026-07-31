@@ -481,8 +481,9 @@ void VulkanEngine::update_scene()
     glm::mat4 view = mainCamera.getViewMatrix();
 
     // camera projection
-    glm::mat4 projection = glm::perspective(glm::radians(70.f), (float)_windowExtent.width / (float)_windowExtent.height, 10000.f, 0.1f);
-
+    float renderFar = _freezeCull ? 1000.f : 50.f; 
+    glm::mat4 projection = glm::perspective(glm::radians(70.f),
+        (float)_windowExtent.width / (float)_windowExtent.height, renderFar, 1.0f);
     mainDrawContext.OpaqueSurfaces.clear();
 
     loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
@@ -529,6 +530,13 @@ GPULineBuffers VulkanEngine::PushVertex()
     6,7,
     1,3,
     5,7 };
+
+    // 视锥专用边表:近环 + 远环 + 4 条连接
+    int frustumLine[24] = {
+        0,1, 1,2, 2,3, 3,0,    // 近平面一圈
+        4,5, 5,6, 6,7, 7,4,    // 远平面一圈
+        0,4, 1,5, 2,6, 3,7     // 近→远 四条连接棱
+    };
 
     std::vector<glm::vec4> lineVerts;
     lineVerts.reserve(mainDrawContext.OpaqueSurfaces.size() * 24);
@@ -597,7 +605,7 @@ GPULineBuffers VulkanEngine::PushVertex()
     }
 
     //转24个点
-    for (auto i : line)
+    for (auto i : frustumLine)
         lineVerts.push_back(glm::vec4(frustumCorners[i], 1.0f));
 
     GPULineBuffers LineBuffer;
