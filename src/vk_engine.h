@@ -175,7 +175,7 @@ struct EngineStats {
 
 struct PathPoint { glm::vec3 pos; float yaw, pitch; };
 
-enum class CamMode { Free, Playing };
+enum class CamMode { Free, Playing, ObserveCull };
 
 class VulkanEngine {
 public:
@@ -366,6 +366,7 @@ public:
 	void      rebuildArcLUT();             // 采样建弧长表
 	float     arcLengthToU(float targetS); // 弧长反查参数
 	void      updatePlayback(float dt);    // 每帧回放:写回 mainCamera
+	void      updateObserveCull(float dt); // 第三视角:cull 视锥飞路径,mainCamera 自由
 private:
 	void init_descriptors();
 	void init_pipelines();

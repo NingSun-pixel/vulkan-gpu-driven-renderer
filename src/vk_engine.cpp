@@ -372,7 +372,7 @@ void VulkanEngine::run()
                     stop_rendering = false;
                 }
             }
-            if (_camMode == CamMode::Free) mainCamera.processSDLEvent(e);   // 播放时屏蔽输入
+            if (_camMode != CamMode::Playing) mainCamera.processSDLEvent(e);   // 仅第一人称回放屏蔽输入(观察态可动)
             ImGui_ImplSDL2_ProcessEvent(&e);
         }
 
@@ -458,21 +458,29 @@ void VulkanEngine::run()
             if (ImGui::Button("Load")) loadPath("../../paths/station.json");
 
             ImGui::SeparatorText("Playback");
-            bool playing = (_camMode == CamMode::Playing);
+            bool busy = (_camMode != CamMode::Free);
 
-            if (playing) ImGui::BeginDisabled();                         // 播放中锁定速度
+            if (busy) ImGui::BeginDisabled();                            // 运行中锁定速度
             ImGui::SliderFloat("Speed", &_playSpeed, 0.5f, 50.f, "%.1f u/s");
-            if (playing) ImGui::EndDisabled();
+            if (busy) ImGui::EndDisabled();
 
-            if (!playing) {
-                if (ImGui::Button("Play") && _pathPoints.size() >= 2) {
+            if (_camMode == CamMode::Free) {
+                if (ImGui::Button("Play") && _pathPoints.size() >= 2) {  // 第一人称飞路径
                     _playSpeedRun = _playSpeed;   // ★ 读一次速度,锁定本次回放
                     _playDist = 0.f;
                     _lutDirty = true;             // 点可能变过,重建弧长表
                     _camMode = CamMode::Playing;
                 }
+                ImGui::SameLine();
+                if (ImGui::Button("Observe Cull") && _pathPoints.size() >= 2) {  // 第三视角观察裁切
+                    _playSpeedRun = _playSpeed;
+                    _playDist = 0.f;
+                    _lutDirty = true;
+                    _freezeCull = true;           // 冻结:让 cull 不再跟主相机,交给路径驱动
+                    _camMode = CamMode::ObserveCull;
+                }
             } else {
-                if (ImGui::Button("Stop")) _camMode = CamMode::Free;     // 中途退出
+                if (ImGui::Button("Stop")) _camMode = CamMode::Free;     // 中途退出(freeze 保持,可手动取消)
             }
         }
 

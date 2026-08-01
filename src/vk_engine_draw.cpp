@@ -554,12 +554,38 @@ void VulkanEngine::updatePlayback(float dt)
     mainCamera.pitch = glm::mix(_pathPoints[i].pitch, _pathPoints[i + 1].pitch, t);
 }
 
+// 第三视角:cull 视锥沿录制路径飞行(循环),渲染相机(mainCamera)保持自由
+void VulkanEngine::updateObserveCull(float dt)
+{
+    int N = (int)_pathPoints.size();
+    if (N < 2) { _camMode = CamMode::Free; return; }
+    if (_lutDirty) { rebuildArcLUT(); _lutDirty = false; }
+
+    _playDist += _playSpeedRun * dt;
+    if (_totalLen > 0.f) _playDist = std::fmod(_playDist, _totalLen);   // 循环观察
+
+    float u = arcLengthToU(_playDist);
+    int i = glm::clamp((int)floor(u), 0, N - 2);
+    float t = u - i;
+
+    Camera cullCam;                                     // 临时相机:复用同一套 yaw/pitch 约定
+    cullCam.position = evalSpline(u);
+    cullCam.yaw   = lerpAngle(_pathPoints[i].yaw,  _pathPoints[i + 1].yaw,  t);
+    cullCam.pitch = glm::mix(_pathPoints[i].pitch, _pathPoints[i + 1].pitch, t);
+
+    glm::mat4 view = cullCam.getViewMatrix();
+    float aspect = (float)_windowExtent.width / (float)_windowExtent.height;
+    glm::mat4 proj = glm::perspective(glm::radians(70.f), aspect, 300.f, 1.0f); // cull 远平面=300(与常规一致)
+    proj[1][1] *= -1;                                   // 和 sceneData.proj 同款 Y 翻转,保证 cull/线框一致
+    _cullViewProj = proj * view;
+}
+
 void VulkanEngine::update_scene()
 {
-    if (_camMode == CamMode::Free)
-        mainCamera.update();
+    if (_camMode == CamMode::Playing)
+        updatePlayback(stats.frametime_CPU / 1000.f);   // 第一人称飞路径
     else
-        updatePlayback(stats.frametime_CPU / 1000.f);   // 上一帧耗时(秒)当 dt
+        mainCamera.update();                            // Free / ObserveCull:自由飞观察相机
 
     glm::mat4 view = mainCamera.getViewMatrix();
 
@@ -579,6 +605,10 @@ void VulkanEngine::update_scene()
     // to opengl and gltf axis
     sceneData.proj[1][1] *= -1;
     sceneData.viewproj = sceneData.proj * sceneData.view;
+
+    // 第三视角观察:cull 视锥沿录制路径飞,渲染仍是自由的 mainCamera
+    if (_camMode == CamMode::ObserveCull)
+        updateObserveCull(stats.frametime_CPU / 1000.f);   // 覆盖 _cullViewProj(freeze 已开,draw_init 不会再改它)
 
     //some default lighting parameters
     sceneData.ambientColor = glm::vec4(.1f);
