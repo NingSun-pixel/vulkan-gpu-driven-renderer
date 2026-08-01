@@ -372,7 +372,7 @@ void VulkanEngine::run()
                     stop_rendering = false;
                 }
             }
-            mainCamera.processSDLEvent(e);
+            if (_camMode == CamMode::Free) mainCamera.processSDLEvent(e);   // 播放时屏蔽输入
             ImGui_ImplSDL2_ProcessEvent(&e);
         }
 
@@ -452,6 +452,27 @@ void VulkanEngine::run()
                 const auto& p = _pathPoints[i];
                 ImGui::Text("[%d] (%.1f, %.1f, %.1f)  yaw %.2f  pitch %.2f",
                     i, p.pos.x, p.pos.y, p.pos.z, p.yaw, p.pitch);
+            }
+            if (ImGui::Button("Save")) savePath("../../paths/station.json");
+            ImGui::SameLine();
+            if (ImGui::Button("Load")) loadPath("../../paths/station.json");
+
+            ImGui::SeparatorText("Playback");
+            bool playing = (_camMode == CamMode::Playing);
+
+            if (playing) ImGui::BeginDisabled();                         // 播放中锁定速度
+            ImGui::SliderFloat("Speed", &_playSpeed, 0.5f, 50.f, "%.1f u/s");
+            if (playing) ImGui::EndDisabled();
+
+            if (!playing) {
+                if (ImGui::Button("Play") && _pathPoints.size() >= 2) {
+                    _playSpeedRun = _playSpeed;   // ★ 读一次速度,锁定本次回放
+                    _playDist = 0.f;
+                    _lutDirty = true;             // 点可能变过,重建弧长表
+                    _camMode = CamMode::Playing;
+                }
+            } else {
+                if (ImGui::Button("Stop")) _camMode = CamMode::Free;     // 中途退出
             }
         }
 

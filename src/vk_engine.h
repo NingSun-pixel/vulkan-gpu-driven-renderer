@@ -175,6 +175,8 @@ struct EngineStats {
 
 struct PathPoint { glm::vec3 pos; float yaw, pitch; };
 
+enum class CamMode { Free, Playing };
+
 class VulkanEngine {
 public:
 	EngineStats stats;
@@ -348,7 +350,22 @@ public:
 
 	std::vector<PathPoint> _pathPoints;
 
+	void savePath(const std::string& path);
+	void loadPath(const std::string& path);
 
+	// ---- 相机路径回放(样条 + 弧长匀速)----
+	CamMode _camMode      = CamMode::Free;
+	float   _playSpeed    = 5.0f;   // 面板可调(单位/秒)
+	float   _playSpeedRun = 5.0f;   // Play 时快照一次,回放全程只用它
+	float   _playDist     = 0.0f;   // 已走弧长
+	std::vector<glm::vec2> _arcLUT; // (u, s) 弧长表
+	float   _totalLen     = 0.0f;
+	bool    _lutDirty      = true;
+
+	glm::vec3 evalSpline(float u);         // Catmull-Rom,u∈[0,N-1]
+	void      rebuildArcLUT();             // 采样建弧长表
+	float     arcLengthToU(float targetS); // 弧长反查参数
+	void      updatePlayback(float dt);    // 每帧回放:写回 mainCamera
 private:
 	void init_descriptors();
 	void init_pipelines();

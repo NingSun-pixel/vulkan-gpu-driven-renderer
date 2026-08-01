@@ -474,9 +474,92 @@ void VulkanEngine::init_default_data() {
 
 }
 
+// ============ 相机路径:样条 + 弧长匀速回放 ============
+static glm::vec3 catmullRom(glm::vec3 p0, glm::vec3 p1, glm::vec3 p2, glm::vec3 p3, float t)
+{
+    float t2 = t * t, t3 = t2 * t;
+    return 0.5f * ((2.f * p1) + (-p0 + p2) * t
+        + (2.f * p0 - 5.f * p1 + 4.f * p2 - p3) * t2
+        + (-p0 + 3.f * p1 - 3.f * p2 + p3) * t3);
+}
+
+static float lerpAngle(float a, float b, float t)   // yaw 走最短路,防跨 ±π 甩头
+{
+    const float PI = 3.14159265358979323846f;
+    float d = b - a;
+    while (d > PI)  d -= 2.f * PI;
+    while (d < -PI) d += 2.f * PI;
+    return a + d * t;
+}
+
+glm::vec3 VulkanEngine::evalSpline(float u)          // u∈[0,N-1],整数命中控制点
+{
+    int N = (int)_pathPoints.size();
+    int i = glm::clamp((int)floor(u), 0, N - 2);
+    float t = u - i;
+    return catmullRom(_pathPoints[glm::max(i - 1, 0)].pos, _pathPoints[i].pos,
+        _pathPoints[i + 1].pos, _pathPoints[glm::min(i + 2, N - 1)].pos, t);
+}
+
+void VulkanEngine::rebuildArcLUT()
+{
+    _arcLUT.clear();
+    int N = (int)_pathPoints.size();
+    if (N < 2) { _totalLen = 0.f; return; }
+    const int STEPS = 1000;
+    float s = 0.f;
+    glm::vec3 prev = evalSpline(0.f);
+    _arcLUT.push_back({ 0.f, 0.f });
+    for (int k = 1; k <= STEPS; k++) {
+        float u = (float)k / STEPS * (N - 1);
+        glm::vec3 p = evalSpline(u);
+        s += glm::length(p - prev);
+        prev = p;
+        _arcLUT.push_back({ u, s });
+    }
+    _totalLen = s;
+}
+
+float VulkanEngine::arcLengthToU(float targetS)
+{
+    if (_arcLUT.empty()) return 0.f;
+    if (targetS <= 0.f)        return _arcLUT.front().x;
+    if (targetS >= _totalLen)  return _arcLUT.back().x;
+    int lo = 0, hi = (int)_arcLUT.size() - 1;         // 二分找 s
+    while (lo + 1 < hi) {
+        int m = (lo + hi) / 2;
+        if (_arcLUT[m].y < targetS) lo = m; else hi = m;
+    }
+    float s0 = _arcLUT[lo].y, s1 = _arcLUT[hi].y;
+    float f = (s1 - s0 > 1e-6f) ? (targetS - s0) / (s1 - s0) : 0.f;
+    return glm::mix(_arcLUT[lo].x, _arcLUT[hi].x, f);
+}
+
+void VulkanEngine::updatePlayback(float dt)
+{
+    int N = (int)_pathPoints.size();
+    if (N < 2) { _camMode = CamMode::Free; return; }
+    if (_lutDirty) { rebuildArcLUT(); _lutDirty = false; }
+
+    _playDist += _playSpeedRun * dt;                  // 匀速:距离 = 锁定速度 × 时间
+    if (_playDist >= _totalLen) { _camMode = CamMode::Free; return; }  // 走完自动停
+
+    float u = arcLengthToU(_playDist);
+    mainCamera.position = evalSpline(u);              // 位置:弧长匀速
+
+    // 朝向:同一 u 上插值 capture 存的 yaw/pitch(自动合相机约定)
+    int i = glm::clamp((int)floor(u), 0, N - 2);
+    float t = u - i;
+    mainCamera.yaw   = lerpAngle(_pathPoints[i].yaw,  _pathPoints[i + 1].yaw,  t);
+    mainCamera.pitch = glm::mix(_pathPoints[i].pitch, _pathPoints[i + 1].pitch, t);
+}
+
 void VulkanEngine::update_scene()
 {
-    mainCamera.update();
+    if (_camMode == CamMode::Free)
+        mainCamera.update();
+    else
+        updatePlayback(stats.frametime_CPU / 1000.f);   // 上一帧耗时(秒)当 dt
 
     glm::mat4 view = mainCamera.getViewMatrix();
 
