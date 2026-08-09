@@ -91,7 +91,8 @@ struct RenderObject {
 struct GPUObjectData {
 	glm::mat4    render_matrix;
 	VkDeviceAddress vertexBuffer; 
-	uint64_t _pad; // 8  → 偏移 72，凑到 80
+	uint32_t batchId;
+	uint32_t _pad; // 8  → 偏移 72，凑到 80
 	glm::vec3 origin; 
 	float sphereRadius;
 	glm::vec4 extents;      

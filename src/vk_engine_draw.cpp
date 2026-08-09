@@ -100,6 +100,7 @@ void VulkanEngine::draw_init()
         objects.push_back({ mainDrawContext.OpaqueSurfaces[s].transform,
             mainDrawContext.OpaqueSurfaces[s].vertexBufferAddress,
             0,
+            0,
             mainDrawContext.OpaqueSurfaces[s].bounds.origin,
             mainDrawContext.OpaqueSurfaces[s].bounds.sphereRadius,
             glm::vec4(mainDrawContext.OpaqueSurfaces[s].bounds.extents,1) });
@@ -110,17 +111,15 @@ void VulkanEngine::draw_init()
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
     get_current_frame()._deletionQueue.push_function([=, this]() { destroy_buffer(objectBuffer); });
 
-    name_buffer(objectBuffer.buffer, "objectBuffer");
-    // 4c. 填数据
-    memcpy(objectBuffer.info.pMappedData, objects.data(), objects.size() * sizeof(GPUObjectData));
+    //4b1. SSBO compact information
+    size_t compactBytes = opaque_draws.size() * sizeof(uint32_t);
+    AllocatedBuffer compactBuffer = create_buffer(compactBytes,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+    get_current_frame()._deletionQueue.push_function([=, this]() { destroy_buffer(compactBuffer); });
 
-    // 4d. 分配 + 写描述符（set 2）
-    objectDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _objectDataDescriptorLayout);
-    {
-        DescriptorWriter writer;
-        writer.write_buffer(0, objectBuffer.buffer, objects.size() * sizeof(GPUObjectData), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        writer.update_set(_device, objectDescriptor);
-    }
+    name_buffer(objectBuffer.buffer, "objectBuffer");
+    name_buffer(compactBuffer.buffer, "compactInstances");
+
 
 
     //在init里拿到indirectbuf传递给Culldraw
@@ -134,7 +133,7 @@ void VulkanEngine::draw_init()
     //instanceCount 
 
     auto sameBatch = [](const RenderObject& a, const RenderObject& b) {
-        return a.material == b.material && a.indexBuffer == b.indexBuffer
+        return a.material == b.material && a.indexBuffer == b.indexBuffer       //同 material
             && a.firstIndex == b.firstIndex && a.indexCount == b.indexCount;   // 同 surface
         };
 
@@ -143,27 +142,34 @@ void VulkanEngine::draw_init()
     auto flush = [&]() {
         if (instanceCount == 0) return;
         const RenderObject& r = *rep;
+        //this cmd's idx
+        uint32_t cmdIdx = commands.size();
 
         if (groups.empty() || r.material != groups.back().material)
-            groups.push_back({ r.material, (uint32_t)commands.size(), (uint32_t)instanceCount });  // ← offset/count 都错
+            groups.push_back({ r.material, cmdIdx, 1 }); 
         else
-            groups.back().cmdCount += instanceCount;
+            groups.back().cmdCount += 1;
 
 
-        for (int i = 0; i < instanceCount; i++)
+        //for (int i = 0; i < instanceCount; i++)
+        //{
+        commands.push_back({
+        .indexCount = r.indexCount,
+        .instanceCount = 0,   // change to instance, atomicadd by CS
+        .firstIndex = r.firstIndex,    // 已经是 mega 相对(baseIndex+startIndex)，3.1 做好的
+        .vertexOffset = 0,               // per-mesh BDA，不 rebase
+        .firstInstance = batchStart,      // start:this set of instance
+        });
+        //    //add counters for triangles and draws
+        //    stats.drawcall_count++;
+        //    stats.triangle_count += r.indexCount / 3;
+        //}
+        for (int start = batchStart; start < batchStart + instanceCount; start++)
         {
-            commands.push_back({
-            .indexCount = r.indexCount,
-            .instanceCount = 1,   // 批大小，和阶段2 一样
-            .firstIndex = r.firstIndex,    // 已经是 mega 相对(baseIndex+startIndex)，3.1 做好的
-            .vertexOffset = 0,               // per-mesh BDA，不 rebase
-            .firstInstance = batchStart + (uint32_t)i,      // 这批在 objects[] 里的起点
-                });
-            //add counters for triangles and draws
-            stats.drawcall_count++;
-            stats.triangle_count += r.indexCount / 3;
+            objects[start].batchId = cmdIdx;
         }
 
+            
         };
 
     rep = &mainDrawContext.OpaqueSurfaces[opaque_draws[0]];
@@ -180,6 +186,22 @@ void VulkanEngine::draw_init()
 
     flush();   // ★ 别忘了最后一批
 
+
+    // 4c. 填数据
+    memcpy(objectBuffer.info.pMappedData, objects.data(), objects.size() * sizeof(GPUObjectData));
+    //compact would be assignment in cs so no need to init
+
+    // 4d. 分配 + 写描述符（set 2）
+    objectDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _objectDataDescriptorLayout);
+    {
+        DescriptorWriter writer;
+        writer.write_buffer(0, objectBuffer.buffer, objects.size() * sizeof(GPUObjectData), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.write_buffer(1, compactBuffer.buffer, opaque_draws.size() * sizeof(uint32_t), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.update_set(_device, objectDescriptor);
+    }
+
+
+
     size_t bytes = (commands.size()) * sizeof(VkDrawIndexedIndirectCommand);
     indirectBuf = create_buffer(bytes,
         VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
@@ -193,10 +215,6 @@ void VulkanEngine::draw_init()
     get_current_frame()._deletionQueue.push_function(
         [=, this]() { destroy_buffer(indirectToFree); });   // 删快照,不删 this->indirectBuf
 
-
-    //get_current_frame()._deletionQueue.push_function([=, this]() {
-    //    destroy_buffer(indirectBuf);
-    //    });
 
     // 4d. 分配 + 写描述符（set 2）
     commandDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _CommandDataDescriptorLayout);

@@ -26,6 +26,7 @@ layout(buffer_reference, std430) readonly buffer VertexBuffer{
 struct ObjectData{
 	mat4 render_matrix;
 	VertexBuffer vertexBuffer;
+	uint batchId; uint _pad;
 	vec4 boundsOriginRadius;
 	vec4 boundsExtents;
 };
@@ -36,11 +37,16 @@ layout(set = 2, binding = 0, std430) readonly buffer ObjectBuffer
 	ObjectData objects[];
 }objectBuffer;
 
+layout(set = 2, binding = 1, std430) readonly buffer CompactBuffer 
+{
+	uint compactInstances[];
+}compactBuffer;
 
 
 void main() 
 {
-	ObjectData obj = objectBuffer.objects[gl_InstanceIndex];   // 不再读 PushConstants
+	uint objIdx = compactBuffer.compactInstances[gl_InstanceIndex];
+	ObjectData obj = objectBuffer.objects[objIdx];   // 不再读 PushConstants
 	Vertex v = obj.vertexBuffer.vertices[gl_VertexIndex];        // 取顶点这行几乎不变
 	vec4 worldPos = obj.render_matrix * vec4(v.position, 1.0);
 	gl_Position   = sceneData.viewproj * worldPos;   // 原来那行改成用 worldPos
