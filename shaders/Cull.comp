@@ -52,6 +52,8 @@ struct IndirectCmd {
 };
 layout(set=1, binding=0, std430) buffer CmdBuffer { IndirectCmd commands[]; };
 
+layout(set=1, binding=1, std430) buffer VisBuffer { uint Vis[]; }visBuffer;
+
 layout(push_constant) uniform Push { mat4 viewproj; uint count; } pc;
 
 // m[col] 是列;元素 (行r,列c) = m[c][r] → 第 r 行 = (m[0][r],m[1][r],m[2][r],m[3][r])
@@ -131,6 +133,8 @@ void main()
         }
     }
 
+    visBuffer.Vis[i] =  visible ? 1u : 0u;
+    
     if(visible)
     {
         //get the right batchid's instance count and add it
@@ -141,7 +145,7 @@ void main()
         uint local = atomicAdd(commands[batchId].instanceCount,1u);
         //link the execution order of GPU to the order in which data is arranged in the data package
         compactBuffer.compactInstances[base + local] = i;
-
     }
+
     //commands[i].instanceCount = visible ? 1u : 0u;
 }

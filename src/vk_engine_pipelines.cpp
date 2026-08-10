@@ -34,13 +34,14 @@ void VulkanEngine::init_descriptors()
     {
         DescriptorLayoutBuilder builder;
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);   // binding 0 = SSBO objects
-        builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);   // binding 0 = SSBO compactInstances
+        builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);   // binding 1 = SSBO compactInstances
         _objectDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT);
     }
 
     {
         DescriptorLayoutBuilder builder;
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);   // binding 0 = SSBO
+        builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);   // binding 1 = SSBO compactInstances
         _CommandDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT);
     }
 

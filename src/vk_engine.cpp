@@ -263,18 +263,15 @@ void VulkanEngine::draw()
     draw_init();
     draw_Cull(cmd);
 
-    VkBufferMemoryBarrier2 bufBarrier{ .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2 };
-    bufBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    bufBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-    bufBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
-    bufBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-    bufBarrier.buffer = indirectBuf.buffer;
-    bufBarrier.offset = 0;
-    bufBarrier.size = VK_WHOLE_SIZE;
+    VkMemoryBarrier2 memBarrier{ .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
+    memBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    memBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+    memBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+    memBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
 
     VkDependencyInfo depInfo{ .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-    depInfo.bufferMemoryBarrierCount = 1;
-    depInfo.pBufferMemoryBarriers = &bufBarrier;
+    depInfo.memoryBarrierCount = 1;          // ← memory 组,不是 buffer 组
+    depInfo.pMemoryBarriers = &memBarrier;
     vkCmdPipelineBarrier2(cmd, &depInfo);
 
     //make the swapchain image into presentable mode

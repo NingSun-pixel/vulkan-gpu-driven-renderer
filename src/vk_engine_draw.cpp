@@ -161,8 +161,8 @@ void VulkanEngine::draw_init()
         .firstInstance = batchStart,      // start:this set of instance
         });
         //    //add counters for triangles and draws
-        //    stats.drawcall_count++;
-        //    stats.triangle_count += r.indexCount / 3;
+        stats.drawcall_count++;
+        stats.triangle_count += r.indexCount * instanceCount / 3;
         //}
         for (int start = batchStart; start < batchStart + instanceCount; start++)
         {
@@ -216,11 +216,21 @@ void VulkanEngine::draw_init()
         [=, this]() { destroy_buffer(indirectToFree); });   // 删快照,不删 this->indirectBuf
 
 
+    size_t bytesVis = (opaque_draws.size()) * sizeof(uint32_t);
+    AllocatedBuffer visBuffer = create_buffer(bytesVis,
+        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+        | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,        // STORAGE 是给阶段4 compute 写用，现在加上无妨
+        VMA_MEMORY_USAGE_GPU_ONLY);
+    name_buffer(visBuffer.buffer, "visBuffer");
+    get_current_frame()._deletionQueue.push_function(
+        [=, this]() { destroy_buffer(visBuffer); });
+
     // 4d. 分配 + 写描述符（set 2）
     commandDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _CommandDataDescriptorLayout);
     {
         DescriptorWriter writer;
         writer.write_buffer(0, indirectBuf.buffer, bytes, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.write_buffer(1, visBuffer.buffer, bytesVis, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         writer.update_set(_device, commandDescriptor);
     }
 }
