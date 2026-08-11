@@ -54,7 +54,7 @@ layout(set=1, binding=0, std430) buffer CmdBuffer { IndirectCmd commands[]; };
 
 layout(set=1, binding=1, std430) buffer VisBuffer { uint Vis[]; }visBuffer;
 
-layout(push_constant) uniform Push { mat4 viewproj; uint count; } pc;
+layout(push_constant) uniform Push { mat4 viewproj; uint count; uint cullEnabled;} pc;
 
 // m[col] 是列;元素 (行r,列c) = m[c][r] → 第 r 行 = (m[0][r],m[1][r],m[2][r],m[3][r])
 void extractPlanes(mat4 m, out vec4 planes[6]) {
@@ -110,31 +110,33 @@ void main()
     Bound.zMax = Cube[0].z;
     Bound.zMin = Cube[0].z;
 
-    for (int c=1;c<8;c++){
-        Cube[c] = m * vec4(origin + (corners[c] * extents), 1.f);
-        Bound.xMax = max(Bound.xMax, Cube[c].x);
-        Bound.xMin = min(Bound.xMin, Cube[c].x);
-        Bound.yMax = max(Bound.yMax, Cube[c].y);
-        Bound.yMin = min(Bound.yMin, Cube[c].y);
-        Bound.zMax = max(Bound.zMax, Cube[c].z);
-        Bound.zMin = min(Bound.zMin, Cube[c].z);
-    }
-
     bool visible = true;
-    for (int c=0;c<6;c++){
-        float DisX = planes[c].x > 0 ? Bound.xMax : Bound.xMin;
-        float DisY = planes[c].y > 0 ? Bound.yMax : Bound.yMin;
-        float DisZ = planes[c].z > 0 ? Bound.zMax : Bound.zMin;
-        float Dis = DisX * planes[c].x + DisY * planes[c].y + DisZ * planes[c].z + planes[c].w;
-        if(Dis < 0)
-        {
-            visible = false;
-            break;
+    if (pc.cullEnabled != 0u) {
+        for (int c=1;c<8;c++){
+            Cube[c] = m * vec4(origin + (corners[c] * extents), 1.f);
+            Bound.xMax = max(Bound.xMax, Cube[c].x);
+            Bound.xMin = min(Bound.xMin, Cube[c].x);
+            Bound.yMax = max(Bound.yMax, Cube[c].y);
+            Bound.yMin = min(Bound.yMin, Cube[c].y);
+            Bound.zMax = max(Bound.zMax, Cube[c].z);
+            Bound.zMin = min(Bound.zMin, Cube[c].z);
+        }
+
+        for (int c=0;c<6;c++){
+            float DisX = planes[c].x > 0 ? Bound.xMax : Bound.xMin;
+            float DisY = planes[c].y > 0 ? Bound.yMax : Bound.yMin;
+            float DisZ = planes[c].z > 0 ? Bound.zMax : Bound.zMin;
+            float Dis = DisX * planes[c].x + DisY * planes[c].y + DisZ * planes[c].z + planes[c].w;
+            if(Dis < 0)
+            {
+                visible = false;
+                break;
+            }
         }
     }
 
     visBuffer.Vis[i] =  visible ? 1u : 0u;
-    
+
     if(visible)
     {
         //get the right batchid's instance count and add it

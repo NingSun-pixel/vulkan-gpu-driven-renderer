@@ -259,7 +259,7 @@ void VulkanEngine::init_Cull_pipelines()
     //?
     VkPushConstantRange pushConstant{};
     pushConstant.offset = 0;
-    pushConstant.size = sizeof(ComputePushConstants);
+    pushConstant.size = sizeof(CullPush);
     pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     cullObjLayout.pPushConstantRanges = &pushConstant;

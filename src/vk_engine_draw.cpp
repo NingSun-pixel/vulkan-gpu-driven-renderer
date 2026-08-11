@@ -24,6 +24,7 @@
 #include "imgui_impl_vulkan.h"
 #include <iostream>
 #include <set>
+#include <fstream>
 
 void VulkanEngine::draw_Cull(VkCommandBuffer cmd)
 {
@@ -39,6 +40,7 @@ void VulkanEngine::draw_Cull(VkCommandBuffer cmd)
     CullPush pc{};
     pc.viewproj = _cullViewProj;
     pc.count = (uint32_t)opaque_draws.size();   // ★ 用 uint，不是塞进 float
+    pc.cullEnabled = (_benchConfig == 2) ? 1u : 0u;
     vkCmdPushConstants(cmd, _cullPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CullPush), &pc);
     vkCmdDispatch(cmd, (pc.count + 63) / 64, 1, 1); // 整数取整，别用 float
 
@@ -570,7 +572,11 @@ void VulkanEngine::updatePlayback(float dt)
     if (_lutDirty) { rebuildArcLUT(); _lutDirty = false; }
 
     _playDist += _playSpeedRun * dt;                  // 匀速:距离 = 锁定速度 × 时间
-    if (_playDist >= _totalLen) { _camMode = CamMode::Free; return; }  // 走完自动停
+    if (_playDist >= _totalLen) { 
+        _camMode = CamMode::Free; 
+        if (_benchmarking) { _benchmarking = false; dumpBenchmark(); }
+        return; 
+    }  // 走完自动停
 
     float u = arcLengthToU(_playDist);
     mainCamera.position = evalSpline(u);              // 位置:弧长匀速
@@ -644,6 +650,39 @@ void VulkanEngine::update_scene()
     sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
 
 }
+
+void VulkanEngine::dumpBenchmark()
+{
+    if (_bench.empty()) return;
+    const char* names[] = { "baseline", "batch", "gpucull", "cpucull" };
+
+    // gpu_ms:升序、丢 warmup、算 avg / 1%low / worst
+    std::vector<float> g; for (auto& s : _bench) g.push_back(s.gpu_ms);
+    std::sort(g.begin(), g.end());
+    int warmup = std::min((int)g.size() / 10, 20);
+    if ((int)g.size() > warmup) g.erase(g.begin(), g.begin() + warmup);
+    int n = (int)g.size();
+    int k = std::max(1, n / 100);
+    double sum = 0;  for (float x : g) sum += x;
+    double low = 0;  for (int i = n - k; i < n; i++) low += g[i];   // 尾部=最高=最差1%
+    float avg = (float)(sum / n), low1 = (float)(low / k), worst = g[n - 1];
+
+    // 三角形 / draws 取全程均值
+    double ts = 0, ds = 0; for (auto& s : _bench) { ts += s.tris; ds += s.draws; }
+    float triAvg = (float)(ts / _bench.size()), drawAvg = (float)(ds / _bench.size());
+
+    std::string path = "../../paths/bench_" + std::string(names[_benchConfig]) + ".csv";
+    std::ofstream f(path);
+    f << "frame,gpu_ms,triangles,draws\n";                           // 逐帧明细(画折线)
+    for (size_t i = 0; i < _bench.size(); i++)
+        f << i << "," << _bench[i].gpu_ms << "," << _bench[i].tris << "," << _bench[i].draws << "\n";
+    f << "\nconfig,avg_ms,low1_ms,worst_ms,tri_avg,draw_avg,frames\n";  // 汇总(拼对比表)
+    f << names[_benchConfig] << "," << avg << "," << low1 << "," << worst << ","
+        << triAvg << "," << drawAvg << "," << n << "\n";
+    f.close();
+    fmt::print("benchmark dumped: {} ({} frames)\n", path, _bench.size());
+}
+
 
 
 GPULineBuffers VulkanEngine::PushVertex()

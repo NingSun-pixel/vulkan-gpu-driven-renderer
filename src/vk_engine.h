@@ -103,6 +103,7 @@ struct GPUObjectData {
 struct CullPush {
 	glm::mat4 viewproj;   // 偏移 0，占 64
 	uint32_t  count;      // 偏移 64，uint ← 和 shader 的 uint count 对上
+	uint32_t  cullEnabled;// 偏移 68
 };
 
 struct LinePush {
@@ -177,6 +178,9 @@ struct EngineStats {
 struct PathPoint { glm::vec3 pos; float yaw, pitch; };
 
 enum class CamMode { Free, Playing, ObserveCull };
+
+
+
 
 class VulkanEngine {
 public:
@@ -368,6 +372,14 @@ public:
 	float     arcLengthToU(float targetS); // 弧长反查参数
 	void      updatePlayback(float dt);    // 每帧回放:写回 mainCamera
 	void      updateObserveCull(float dt); // 第三视角:cull 视锥飞路径,mainCamera 自由
+
+	struct FrameSample { float gpu_ms; int tris; int draws; };
+	std::vector<FrameSample> _bench;
+	bool _benchmarking = false;
+	int  _benchConfig = 0;          // 0 baseline / 1 batch / 2 gpucull / 3 cpucull
+	bool _cullEnabled = true;       // 剔除开关(基线 vs 剔除对比用)
+	void dumpBenchmark();
+
 private:
 	void init_descriptors();
 	void init_pipelines();

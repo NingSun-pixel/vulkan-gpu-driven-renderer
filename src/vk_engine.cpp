@@ -217,6 +217,9 @@ void VulkanEngine::draw()
         vkGetQueryPoolResults(_device, get_current_frame()._pipelineStatsPool, 0, 1,
             sizeof(prims), &prims, sizeof(prims), VK_QUERY_RESULT_64_BIT);
         stats.triangle_count_GPU = (int)prims;   // ★ 真·剔除后
+
+        if (_benchmarking && _camMode == CamMode::Playing)
+            _bench.push_back({ stats.gpu_ms_geometry, stats.triangle_count_GPU, stats.drawcall_count });
     }
 
     //the second time you run this frame
@@ -418,8 +421,8 @@ void VulkanEngine::run()
         if (ImGui::Begin("Settings")) {
             ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
             ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
-
-
+            const char* cfgNames[] = { "baseline", "batch", "gpucull", "cpucull" };
+            ImGui::Combo("Bench Cfg", &_benchConfig, cfgNames, IM_ARRAYSIZE(cfgNames));
 
             ImGui::SeparatorText("Culling");
             ImGui::Checkbox("Freeze Cull Frustum", &_freezeCull);
@@ -467,6 +470,8 @@ void VulkanEngine::run()
                     _playDist = 0.f;
                     _lutDirty = true;             // 点可能变过,重建弧长表
                     _camMode = CamMode::Playing;
+                    _bench.clear();
+                    _benchmarking = true;
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("Observe Cull") && _pathPoints.size() >= 2) {  // 第三视角观察裁切
@@ -477,7 +482,11 @@ void VulkanEngine::run()
                     _camMode = CamMode::ObserveCull;
                 }
             } else {
-                if (ImGui::Button("Stop")) _camMode = CamMode::Free;     // 中途退出(freeze 保持,可手动取消)
+                if (ImGui::Button("Stop"))
+                {
+                    _camMode = CamMode::Free;     // stop in the process
+                    _benchmarking = false;
+                }
             }
         }
 
