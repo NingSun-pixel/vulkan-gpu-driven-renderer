@@ -4,7 +4,7 @@
 
 **GPU-driven indirect cuts CPU draw submission ~2.5× vs naive per-object draws; GPU compute frustum culling cuts geometry time ~13% by halving shaded triangles. See [Performance](#performance).**
 
-[GPU-driven frustum culling demo](docs/hero.gif)
+![Space station scene rendered by the GPU-driven pipeline](docs/SpaceStationRendering.png)
 
 ---
 
@@ -39,6 +39,16 @@ flowchart LR
 ```
 
 **Key point:** the culling result stays in GPU memory. The CPU never learns which objects were culled — it only records one indirect multidraw whose per-draw `instanceCount` was set by the GPU.
+
+## Culling in action
+
+The cull frustum can be **frozen** and observed from a separate third-person camera. Everything outside the frozen frustum is removed on the GPU — triangles drop from 1.06 M to ~0.67 M, draw calls from 1699 to 593:
+
+![Frozen-frustum culling result — geometry outside the frustum is removed](docs/CutResult.png)
+
+Turning on the AABB overlay draws the culling result the GPU computed: **red boxes are culled** objects (outside the frozen frustum), with the frustum drawn as a white wireframe. This reads the same buffer the indirect draw consumes — no separate CPU-side pass.
+
+![Culling debug view — red AABBs mark GPU-culled objects, white lines are the frozen frustum](docs/CutWithRedDebug.png)
 
 ## Performance
 
