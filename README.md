@@ -4,8 +4,7 @@
 
 **GPU-driven indirect cuts CPU draw submission ~2.5× vs naive per-object draws; GPU compute frustum culling cuts geometry time ~13% by halving shaded triangles. See [Performance](#performance).**
 
-<!-- TODO: hero GIF — frozen-frustum culling, objects turning red then culled as they cross the frozen frustum. 8–12s loop, drop at docs/hero.gif -->
-![GPU-driven frustum culling demo](docs/hero.gif)
+[GPU-driven frustum culling demo](docs/hero.gif)
 
 ---
 
