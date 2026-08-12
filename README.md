@@ -50,6 +50,20 @@ Turning on the AABB overlay draws the culling result the GPU computed: **red box
 
 ![Culling debug view — red AABBs mark GPU-culled objects, white lines are the frozen frustum](docs/CutWithRedDebug.png)
 
+## Tooling
+
+Beyond the renderer, I built the tooling to *drive and measure* it — reproducible benchmarking is what let me reach the conclusions below instead of guessing.
+
+- **Camera-path tool** — capture waypoints, then fly a smooth **Catmull-Rom spline** through them. Playback is **constant-speed** via an arc-length lookup table (reparameterizing the spline by *distance* rather than the raw `t` parameter), and paths save/load as JSON. An *observe-cull* mode flies the recorded path with the **cull** frustum while a free third-person camera watches — this is how the culling shots above were framed.
+- **In-engine profiler** — per-pass GPU time from timestamp queries and true post-cull triangle counts from a pipeline-statistics query, with **live on-screen line graphs** for both GPU and CPU time.
+- **Benchmark harness** — a config selector runs the four pipeline variants; each frame along the fixed path samples GPU time, CPU-submit time, triangles and draw calls, then exports per-frame CSV plus a summary (median / 1% low / worst).
+- **Analysis script** ([`paths/plot_bench.py`](paths/plot_bench.py)) — reads every `bench_*.csv`, normalizes runs to path progress, and renders the GPU / CPU / triangle comparison chart; new configurations are picked up automatically.
+
+<p align="center">
+  <img src="docs/camera_tool.png" width="45%" alt="Camera-path recording tool"/>
+  <img src="docs/profiler_hud.png" width="45%" alt="In-engine GPU/CPU profiler HUD"/>
+</p>
+
 ## Performance
 
 Measured with the in-engine GPU timestamp + pipeline-statistics profiler, sampled every frame along a **fixed camera path** (~1000 frames; **median** reported to reject spikes). One machine, one path, four configurations toggled at runtime.
