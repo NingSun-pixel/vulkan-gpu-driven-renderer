@@ -63,11 +63,29 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd)
 
 void VulkanEngine::draw_init()
 {
+    auto _initStart = std::chrono::system_clock::now();
     //reset counters
     stats.drawcall_count = 0;
     stats.triangle_count = 0;
 
+
     if (!_freezeCull) _cullViewProj = sceneData.viewproj;
+
+    // ==== _stressDup ====
+    //if (_stressDup > 1) {
+    //    auto& surf = mainDrawContext.OpaqueSurfaces;
+    //    size_t orig = surf.size();
+    //    surf.reserve(orig * _stressDup);
+    //    for (int k = 1; k < _stressDup; k++) {
+    //        glm::mat4 off = glm::translate(glm::mat4(1.f), glm::vec3(60.f * k, 0.f, 0.f));
+    //        for (size_t s = 0; s < orig; s++) {
+    //            RenderObject r = surf[s];        
+    //            r.transform = off * r.transform;   
+    //            surf.push_back(r);
+    //        }
+    //    }
+    //}
+
     opaque_draws.reserve(mainDrawContext.OpaqueSurfaces.size());
 
 
@@ -83,15 +101,16 @@ void VulkanEngine::draw_init()
     std::sort(opaque_draws.begin(), opaque_draws.end(), [&](const auto& iA, const auto& iB) {
         const RenderObject& A = mainDrawContext.OpaqueSurfaces[iA];
         const RenderObject& B = mainDrawContext.OpaqueSurfaces[iB];
-        if (A.material == B.material) {
-            if (A.indexBuffer == B.indexBuffer)
+        if (A.material == B.material) //same mat
+        {
+            if (A.indexBuffer == B.indexBuffer)//same mesh
             {
-                A.firstIndex < B.firstIndex;
+                return A.firstIndex < B.firstIndex;
             }
-            return A.indexBuffer < B.indexBuffer;
+            return A.indexBuffer < B.indexBuffer;//not same mesh
         }
         else {
-            return A.material < B.material;
+            return A.material < B.material;//even not same mat
         }
         });
 
@@ -114,11 +133,12 @@ void VulkanEngine::draw_init()
     get_current_frame()._deletionQueue.push_function([=, this]() { destroy_buffer(objectBuffer); });
 
     //4b1. SSBO compact information
-    size_t compactBytes = opaque_draws.size() * sizeof(uint32_t);
+    size_t compactBytes = objects.size() * sizeof(uint32_t);   // ★ 覆盖 opaque+transparent(透明也读它,别只 opaque)
     AllocatedBuffer compactBuffer = create_buffer(compactBytes,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
     get_current_frame()._deletionQueue.push_function([=, this]() { destroy_buffer(compactBuffer); });
-
+    uint32_t* ci = (uint32_t*)compactBuffer.info.pMappedData;
+    for (uint32_t k = 0; k < objects.size(); k++) ci[k] = k;     // 恒等:透明靠这个直取自己;cull 只覆盖 opaque 段,transparent 段保持恒等
     name_buffer(objectBuffer.buffer, "objectBuffer");
     name_buffer(compactBuffer.buffer, "compactInstances");
 
@@ -134,9 +154,11 @@ void VulkanEngine::draw_init()
 
     //instanceCount 
 
-    auto sameBatch = [](const RenderObject& a, const RenderObject& b) {
-        return a.material == b.material && a.indexBuffer == b.indexBuffer       //同 material
-            && a.firstIndex == b.firstIndex && a.indexCount == b.indexCount;   // 同 surface
+    bool instancing = (_benchConfig != 0);
+    auto sameBatch = [instancing](const RenderObject& a, const RenderObject& b) {
+        if (!instancing) return false;     
+        return a.material == b.material && a.indexBuffer == b.indexBuffer
+            && a.firstIndex == b.firstIndex && a.indexCount == b.indexCount;
         };
 
 
@@ -173,20 +195,23 @@ void VulkanEngine::draw_init()
 
             
         };
-
-    rep = &mainDrawContext.OpaqueSurfaces[opaque_draws[0]];
-    for (size_t j = 0; j < opaque_draws.size() - 1; j++) {
-        const RenderObject& r = mainDrawContext.OpaqueSurfaces[opaque_draws[j + 1]];
-        if (instanceCount > 0 && sameBatch(*rep, r)) {
-            instanceCount++;                       // 同批，数量+1
+    if (_benchConfig != 3) {   // naive 不建 indirect 命令(不然双重计数 drawcall + 虚高 CPU)
+        rep = &mainDrawContext.OpaqueSurfaces[opaque_draws[0]];
+        for (size_t j = 0; j < opaque_draws.size() - 1; j++) {
+            const RenderObject& r = mainDrawContext.OpaqueSurfaces[opaque_draws[j + 1]];
+            if (instanceCount > 0 && sameBatch(*rep, r)) {
+                instanceCount++;                       // 同批，数量+1
+            }
+            else {
+                flush();                            // 先画掉上一批
+                rep = &r; batchStart = j + 1; instanceCount = 1;   // 开新批
+            }
         }
-        else {
-            flush();                            // 先画掉上一批
-            rep = &r; batchStart = j + 1; instanceCount = 1;   // 开新批
-        }
+        flush();   // ★ 别忘了最后一批
     }
-
-    flush();   // ★ 别忘了最后一批
+    else {
+        commands.push_back({ 0,0,0,0,0 });
+    }
 
 
     // 4c. 填数据
@@ -198,7 +223,7 @@ void VulkanEngine::draw_init()
     {
         DescriptorWriter writer;
         writer.write_buffer(0, objectBuffer.buffer, objects.size() * sizeof(GPUObjectData), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        writer.write_buffer(1, compactBuffer.buffer, opaque_draws.size() * sizeof(uint32_t), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.write_buffer(1, compactBuffer.buffer, compactBytes, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         writer.update_set(_device, objectDescriptor);
     }
 
@@ -235,6 +260,9 @@ void VulkanEngine::draw_init()
         writer.write_buffer(1, visBuffer.buffer, bytesVis, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         writer.update_set(_device, commandDescriptor);
     }
+
+    auto _initEnd = std::chrono::system_clock::now();
+    stats.draw_init_cpu = std::chrono::duration_cast<std::chrono::microseconds>(_initEnd - _initStart).count() / 1000.f;
 }
 
 
@@ -335,23 +363,44 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
 
     vkCmdBindIndexBuffer(cmd, _megaIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);  // 整场景只绑一次
-    for (auto& g : groups) {
-        // —— bind material（保留你的 lastMaterial/lastPipeline 跳过逻辑）——
-        if (g.material != lastMaterial) {
-            lastMaterial = g.material;
-            if (g.material->pipeline != lastPipeline) {
-                lastPipeline = g.material->pipeline;
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->pipeline);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->layout, 2, 1, &objectDescriptor, 0, nullptr);
+
+    if (_benchConfig == 3) {
+        // naive
+        for (uint32_t oi = 0; oi < opaque_draws.size(); oi++) {
+            const RenderObject& r = mainDrawContext.OpaqueSurfaces[opaque_draws[oi]];
+            if (r.material != lastMaterial) {
+                lastMaterial = r.material;
+                if (r.material->pipeline != lastPipeline) {
+                    lastPipeline = r.material->pipeline;
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 2, 1, &objectDescriptor, 0, nullptr);
+                }
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 1, 1, &r.material->materialSet, 0, nullptr);
             }
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->layout, 1, 1, &g.material->materialSet, 0, nullptr);
+            vkCmdDrawIndexed(cmd, r.indexCount, 1, r.firstIndex, 0, oi);   // firstInstance=oi → compactInstances[oi]=oi → objects[oi]
+            stats.drawcall_count++;
+            stats.triangle_count += r.indexCount / 3;
         }
-        //bind(g.material 的 pipeline + set0 / set1 / set2);   // 沿用你的 lastMaterial/lastPipeline 跳过逻辑
-        vkCmdDrawIndexedIndirect(cmd, indirectBuf.buffer,
-            g.cmdOffset * sizeof(VkDrawIndexedIndirectCommand),  // offset
-            g.cmdCount,                                          // drawCount = 这组命令条数，改成非instance之后，命令条数=instance数目
-            sizeof(VkDrawIndexedIndirectCommand));               // stride
+    }
+    else {
+        //GPU-indirect
+        for (auto& g : groups) {
+            if (g.material != lastMaterial) {
+                lastMaterial = g.material;
+                if (g.material->pipeline != lastPipeline) {
+                    lastPipeline = g.material->pipeline;
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->pipeline);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->layout, 2, 1, &objectDescriptor, 0, nullptr);
+                }
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g.material->pipeline->layout, 1, 1, &g.material->materialSet, 0, nullptr);
+            }
+            vkCmdDrawIndexedIndirect(cmd, indirectBuf.buffer,
+                g.cmdOffset * sizeof(VkDrawIndexedIndirectCommand),
+                g.cmdCount,
+                sizeof(VkDrawIndexedIndirectCommand));
+        }
     }
 
 
@@ -654,7 +703,7 @@ void VulkanEngine::update_scene()
 void VulkanEngine::dumpBenchmark()
 {
     if (_bench.empty()) return;
-    const char* names[] = { "baseline", "batch", "gpucull", "cpucull" };
+    const char* names[] = { "baseline-noinstance", "baseline-instance", "instance-gpucull", "naive" };
 
     // gpu_ms:升序、丢 warmup、算 avg / 1%low / worst
     std::vector<float> g; for (auto& s : _bench) g.push_back(s.gpu_ms);
@@ -667,17 +716,19 @@ void VulkanEngine::dumpBenchmark()
     double low = 0;  for (int i = n - k; i < n; i++) low += g[i];   // 尾部=最高=最差1%
     float avg = (float)(sum / n), low1 = (float)(low / k), worst = g[n - 1];
 
-    // 三角形 / draws 取全程均值
-    double ts = 0, ds = 0; for (auto& s : _bench) { ts += s.tris; ds += s.draws; }
+    // 三角形 / draws / cpu 取全程均值
+    double ts = 0, ds = 0, cs = 0; for (auto& s : _bench) { ts += s.tris; ds += s.draws; cs += s.cpu_ms; }
     float triAvg = (float)(ts / _bench.size()), drawAvg = (float)(ds / _bench.size());
+    float cpuAvg = (float)(cs / _bench.size());
 
     std::string path = "../../paths/bench_" + std::string(names[_benchConfig]) + ".csv";
     std::ofstream f(path);
-    f << "frame,gpu_ms,triangles,draws\n";                           // 逐帧明细(画折线)
+    f << "frame,gpu_ms,cpu_ms,triangles,draws\n";                    // 逐帧明细(画折线)
     for (size_t i = 0; i < _bench.size(); i++)
-        f << i << "," << _bench[i].gpu_ms << "," << _bench[i].tris << "," << _bench[i].draws << "\n";
-    f << "\nconfig,avg_ms,low1_ms,worst_ms,tri_avg,draw_avg,frames\n";  // 汇总(拼对比表)
-    f << names[_benchConfig] << "," << avg << "," << low1 << "," << worst << ","
+        f << i << "," << _bench[i].gpu_ms << "," << _bench[i].cpu_ms << ","
+          << _bench[i].tris << "," << _bench[i].draws << "\n";
+    f << "\nconfig,avg_ms,cpu_avg_ms,low1_ms,worst_ms,tri_avg,draw_avg,frames\n";  // 汇总(拼对比表)
+    f << names[_benchConfig] << "," << avg << "," << cpuAvg << "," << low1 << "," << worst << ","
         << triAvg << "," << drawAvg << "," << n << "\n";
     f.close();
     fmt::print("benchmark dumped: {} ({} frames)\n", path, _bench.size());

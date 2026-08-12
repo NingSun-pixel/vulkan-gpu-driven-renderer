@@ -219,7 +219,9 @@ void VulkanEngine::draw()
         stats.triangle_count_GPU = (int)prims;   // ★ 真·剔除后
 
         if (_benchmarking && _camMode == CamMode::Playing)
-            _bench.push_back({ stats.gpu_ms_geometry, stats.triangle_count_GPU, stats.drawcall_count });
+            _bench.push_back({ stats.gpu_ms_geometry,
+                               stats.draw_init_cpu + stats.mesh_draw_time_CPU,   // CPU:建命令 + 录制
+                               stats.triangle_count_GPU, stats.drawcall_count });
     }
 
     //the second time you run this frame
@@ -264,7 +266,7 @@ void VulkanEngine::draw()
     //Render
     draw_background(cmd);
     draw_init();
-    draw_Cull(cmd);
+    if (_benchConfig != 3) draw_Cull(cmd);   // naive:不走 compute(无 indirect、无剔除)
 
     VkMemoryBarrier2 memBarrier{ .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
     memBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
@@ -415,13 +417,22 @@ void VulkanEngine::run()
         ImGui::PlotLines("##gpu", stats.gpu_ms_history, 120, stats.gpu_ms_offset,
             overlay, 15.0f, 60.0f, ImVec2(0, 60));
 
+        // CPU 折线(建命令 + 录制)
+        float cpuNow = stats.draw_init_cpu + stats.mesh_draw_time_CPU;
+        stats.cpu_ms_history[stats.cpu_ms_offset] = cpuNow;
+        stats.cpu_ms_offset = (stats.cpu_ms_offset + 1) % 120;
+        char cpuOverlay[40];
+        snprintf(cpuOverlay, sizeof(cpuOverlay), "cpu %.2f ms (init %.2f)", cpuNow, stats.draw_init_cpu);
+        ImGui::PlotLines("##cpu", stats.cpu_ms_history, 120, stats.cpu_ms_offset,
+            cpuOverlay, 0.0f, 10.0f, ImVec2(0, 60));
+
         ImGui::End();
 
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);   // (10,10)=离左上角留点边距
         if (ImGui::Begin("Settings")) {
             ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
             ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
-            const char* cfgNames[] = { "baseline", "batch", "gpucull", "cpucull" };
+            const char* cfgNames[] = { "baseline-noinstance", "baseline-instance", "instance-gpucull", "naive" };
             ImGui::Combo("Bench Cfg", &_benchConfig, cfgNames, IM_ARRAYSIZE(cfgNames));
 
             ImGui::SeparatorText("Culling");

@@ -2,7 +2,7 @@
 
 > A Vulkan 1.3 renderer that moves the *"what to draw"* decision from the CPU to the GPU — GPU compute frustum culling feeding `vkCmdDrawIndexedIndirect`, with **zero CPU readback** and a custom in-engine GPU profiler.
 
-**Batching + indirect draw: `1706 → ~34` draw calls. Compute culling: geometry GPU time ↓ (see [Performance](#performance)).**
+**GPU-driven indirect cuts CPU draw submission ~2.5× vs naive per-object draws; GPU compute frustum culling cuts geometry time ~13% by halving shaded triangles. See [Performance](#performance).**
 
 <!-- TODO: hero GIF — frozen-frustum culling, objects turning red then culled as they cross the frozen frustum. 8–12s loop, drop at docs/hero.gif -->
 ![GPU-driven frustum culling demo](docs/hero.gif)
@@ -18,6 +18,7 @@ This scales with the number of *visible* objects rather than the *total* object 
 ## Key Features
 
 - **GPU-driven pipeline** — compute frustum culling writes `instanceCount` into the indirect command buffer, consumed directly by `vkCmdDrawIndexedIndirect`. No CPU readback of visibility.
+- **Instance compaction via `atomicAdd`** — surviving instances grab a slot with a per-batch atomic counter and pack themselves into a compact buffer; the vertex shader maps the dense instance index back to its object. Identical meshes collapse into one instanced draw (1699 → 593 draw calls).
 - **6-plane frustum culling** — planes extracted from the view-projection matrix (Gribb–Hartmann), AABB tested with the p-vertex method, all on the GPU.
 - **Mega index buffer + per-mesh Buffer Device Address** — a single merged index buffer for indirect multidraw, with bindless-style vertex fetch via BDA per mesh.
 - **Per-object data in SSBO** — render matrices, bounds and vertex-buffer addresses live in a GPU storage buffer indexed by instance.
@@ -42,17 +43,26 @@ flowchart LR
 
 ## Performance
 
-Measured with the in-engine GPU timestamp profiler. <!-- TODO: fill numbers from a benchmark run; capture on one machine, one fixed camera path -->
+Measured with the in-engine GPU timestamp + pipeline-statistics profiler, sampled every frame along a **fixed camera path** (~1000 frames; **median** reported to reject spikes). One machine, one path, four configurations toggled at runtime.
 
-| Configuration | Draw calls | Triangles | GPU geometry time |
-|---|---:|---:|---:|
-| Naive (per-object draws) | 1706 | `TODO` | `TODO` |
-| + Instancing + mega index + indirect multidraw | ~34 | `TODO` | `TODO` |
-| + GPU compute culling (**main result**) | ~34 * | `TODO ↓` | `TODO ↓` |
+![GPU time, CPU submission time, and triangle count across four configurations](docs/bench_chart.png)
 
-<sub>* Draw-call count is unchanged by culling in the current masked implementation — culled objects still submit an empty draw, so the culling win shows up in **triangles / GPU time**. True draw-call reduction comes with stream compaction (see Roadmap).</sub>
+| Configuration | Draw calls | Triangles | GPU time (median) | CPU submit (median) |
+|---|---:|---:|---:|---:|
+| Naive — one CPU draw call per object | 1699 | 1.06 M | 19.1 ms | **2.81 ms** |
+| GPU-driven indirect (per-object commands) | 1699 | 1.06 M | 19.1 ms | **1.11 ms** |
+| + Instancing (merge identical meshes via `atomicAdd` compaction) | 593 | 1.06 M | 19.0 ms | 1.06 ms |
+| + GPU compute frustum culling | 593 | **0.54 M** | **16.5 ms** | 1.06 ms |
 
-<!-- TODO: profiler HUD screenshot (gpu_ms line graph) at docs/profiler.png -->
+**What the data actually says — and why that's the interesting part:**
+
+- **GPU-driven indirect cuts CPU submission ~2.5×** (2.81 → 1.11 ms). The CPU stops recording one draw call per object and issues a handful of indirect multidraws instead. This is the classic instancing/GPU-driven win — and it shows up on the **CPU**, not the GPU.
+- **Instancing barely moves GPU time** even though it cuts draw calls 3× (1699 → 593). This scene is **shading/fill-bound, not draw-call-bound** — I confirmed it by stress-testing to ~13× the command count with no change in GPU time. Instancing is a command-overhead optimization; it only pays off when you're command-bound (thousands of small meshes, or a naive OpenGL-style path).
+- **Frustum culling cuts GPU time ~13%** (19.0 → 16.5 ms) by halving the *shaded* triangles — which is where the time actually goes in this scene.
+
+The takeaway isn't one "X% faster" number — it's knowing **where** the time goes and **why** each optimization helps or doesn't. Measuring GPU time alone would hide the CPU win; measuring draw-call count alone would overstate instancing.
+
+<!-- TODO: profiler HUD screenshot (gpu_ms + cpu_ms line graph) at docs/profiler.png -->
 <!-- ![Profiler HUD](docs/profiler.png) -->
 
 ## Build
@@ -72,9 +82,8 @@ cmake --build Build
 
 Honest next steps, roughly in order:
 
-- **PBR + shadow mapping** — Cook–Torrance GGX shading and a directional-light shadow pass (currently Lambert).
-- **Stream compaction** (`atomicAdd` + `IndirectCount`) — collapse culled draws so the draw-call count itself drops.
-- **Hi-Z occlusion culling** — depth-pyramid test to reject objects hidden behind others.
+- **Shadow mapping** — a directional-light shadow pass (classic two-pass, ortho box fit).
+- **Hi-Z occlusion culling** — depth-pyramid test to reject objects hidden behind others; reuses the same `atomicAdd` compaction as the frustum pass.
 - **Two-level cluster culling** (cluster → instance) — the pragmatic, GPU-friendly hierarchy.
 - **Android + Snapdragon profiling** — run the same benchmark matrix on mobile.
 

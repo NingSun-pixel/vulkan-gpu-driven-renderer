@@ -167,10 +167,14 @@ struct EngineStats {
 	int drawcall_count;
 	float scene_update_time_CPU;
 	float mesh_draw_time_CPU;
+	float draw_init_cpu = 0;      // draw_init 建命令的 CPU 耗时(实例化影响最大处)
 
 	float gpu_ms_geometry = 0;
 	float gpu_ms_history[120] = {};
 	int   gpu_ms_offset = 0;
+
+	float cpu_ms_history[120] = {};   // CPU 折线(= draw_init + record)
+	int   cpu_ms_offset = 0;
 
 	int triangle_count_GPU = 0;
 };
@@ -351,7 +355,7 @@ public:
 	//freeze View
 	glm::mat4 _cullViewProj;      // 喂给 compute 的剔除矩阵
 	bool      _freezeCull = false;
-	bool      _ShowAABB = true;
+	bool      _ShowAABB = false;
 
 	std::vector<PathPoint> _pathPoints;
 
@@ -373,12 +377,13 @@ public:
 	void      updatePlayback(float dt);    // 每帧回放:写回 mainCamera
 	void      updateObserveCull(float dt); // 第三视角:cull 视锥飞路径,mainCamera 自由
 
-	struct FrameSample { float gpu_ms; int tris; int draws; };
+	struct FrameSample { float gpu_ms; float cpu_ms; int tris; int draws; };
 	std::vector<FrameSample> _bench;
 	bool _benchmarking = false;
 	int  _benchConfig = 0;          // 0 baseline / 1 batch / 2 gpucull / 3 cpucull
 	bool _cullEnabled = true;       // 剔除开关(基线 vs 剔除对比用)
 	void dumpBenchmark();
+	int _stressDup = 1;
 
 private:
 	void init_descriptors();
