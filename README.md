@@ -117,8 +117,10 @@ cd bin/Release        # or bin/Debug
 - **Bottom-left — Camera Path tool:** capture / save / load camera waypoints and replay them at constant speed along a Catmull-Rom spline; includes an *Observe Cull* mode that flies the culling frustum along the recorded path while a free camera watches from the outside.
 
 ### Key parameters (top-left panel)
+- **Freeze Cull Frustum** — freezes the culling frustum in place while you keep moving the camera freely (the render far-plane is extended so the whole scene stays visible). This lets you fly out to a third-person viewpoint and inspect the culling from outside the frozen frustum.
+- **ShowAABB** — draws a wireframe axis-aligned bounding box around the objects that were **culled** (rejected by frustum culling and no longer drawn), together with the view frustum — so you can see exactly what the GPU culling is dropping.
 
-- **ShowAABB** — toggles a wireframe overlay of each object's axis-aligned bounding box and the view frustum, so you can see the volumes the GPU frustum culling actually tests against.
+With **Freeze Cull Frustum** and **ShowAABB** both enabled, rotate or pull the camera away: you'll see the frozen frustum wireframe, and boxes appear on the objects that fall outside it as they get culled — the culling made visible in real time.
 - **Bench Cfg** — switches the rendering path for A/B benchmarking, to compare CPU vs GPU cost across four configurations:
   - `naive` — one CPU-submitted draw call per object (no indirect, no culling) — the baseline.
   - `baseline-noinstance` — GPU-driven indirect draw, one command per object.
