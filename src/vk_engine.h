@@ -16,6 +16,12 @@ struct ComputePushConstants {
 	glm::vec4 data5;
 };
 
+typedef enum Demo {
+	CPUMutiThread,
+	Cull
+};
+
+
 struct ComputeEffect {
 	const char* name;
 
@@ -380,11 +386,12 @@ public:
 	struct FrameSample { float gpu_ms; float cpu_ms; int tris; int draws; };
 	std::vector<FrameSample> _bench;
 	bool _benchmarking = false;
-	int  _benchConfig = 0;          // 0 baseline / 1 batch / 2 gpucull / 3 cpucull
+	int  _benchConfig = 2;          // 0 baseline / 1 batch / 2 gpucull / 3 cpucull
 	bool _cullEnabled = true;       // 剔除开关(基线 vs 剔除对比用)
 	void dumpBenchmark();
 	int _stressDup = 1;
 
+	int CurrentDemo = 1;
 private:
 	void init_descriptors();
 	void init_pipelines();

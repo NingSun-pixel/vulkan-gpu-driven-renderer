@@ -95,7 +95,7 @@ void VulkanEngine::init()
     mainCamera.pitch = 0;
     mainCamera.yaw = 0;
 
-    std::string structurePath = { "..\\..\\assets\\structure.glb" };
+    std::string structurePath = std::string(PROJECT_ROOT) + "/assets/structure.glb";
     auto structureFile = loadGltf(this, structurePath);
 
     assert(structureFile.has_value());
@@ -265,24 +265,46 @@ void VulkanEngine::draw()
 
     //Render
     draw_background(cmd);
-    draw_init();
-    if (_benchConfig != 3) draw_Cull(cmd);   // naive:不走 compute(无 indirect、无剔除)
 
-    VkMemoryBarrier2 memBarrier{ .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
-    memBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    memBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-    memBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
-    memBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+    //Switch CPU muti thread demo or Cull demo
+    switch (CurrentDemo)
+    {
+    case Demo::CPUMutiThread:
+    {
+        vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    }
+        break;
+    case Demo::Cull:
+    {
+        draw_init();
+        if (_benchConfig != 3) draw_Cull(cmd);   // naive:不走 compute(无 indirect、无剔除)
 
-    VkDependencyInfo depInfo{ .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-    depInfo.memoryBarrierCount = 1;          // ← memory 组,不是 buffer 组
-    depInfo.pMemoryBarriers = &memBarrier;
-    vkCmdPipelineBarrier2(cmd, &depInfo);
+        VkMemoryBarrier2 memBarrier{ .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
+        memBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        memBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+        memBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+        memBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
 
-    //make the swapchain image into presentable mode
-    vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-    draw_geometry(cmd);
+        VkDependencyInfo depInfo{ .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+        depInfo.memoryBarrierCount = 1;          // ← memory 组,不是 buffer 组
+        depInfo.pMemoryBarriers = &memBarrier;
+        vkCmdPipelineBarrier2(cmd, &depInfo);
+
+        //make the swapchain image into presentable mode
+        vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+        draw_geometry(cmd);
+    }
+        break;
+    default:
+    {
+        vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    }
+        break;
+    }
+
     //transtion the draw image and the swapchain image into their correct transfer layouts
     vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     //Transfer to unreadable again
@@ -432,12 +454,18 @@ void VulkanEngine::run()
         if (ImGui::Begin("Settings")) {
             ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
             ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
-            const char* cfgNames[] = { "baseline-noinstance", "baseline-instance", "instance-gpucull", "naive" };
-            ImGui::Combo("Bench Cfg", &_benchConfig, cfgNames, IM_ARRAYSIZE(cfgNames));
+            const char* _CurrentDemo[] = { "MutiThreadCPU", "CullRender" };
+            ImGui::Combo("CurrentDemo", &CurrentDemo, _CurrentDemo, IM_ARRAYSIZE(_CurrentDemo));
 
-            ImGui::SeparatorText("Culling");
-            ImGui::Checkbox("Freeze Cull Frustum", &_freezeCull);
-            ImGui::Checkbox("ShowAABB", &_ShowAABB);
+            if (CurrentDemo == Demo::Cull)
+            {
+                const char* cfgNames[] = { "baseline-noinstance", "baseline-instance", "instance-gpucull", "naive" };
+                ImGui::Combo("Bench Cfg", &_benchConfig, cfgNames, IM_ARRAYSIZE(cfgNames));
+
+                ImGui::SeparatorText("Culling");
+                ImGui::Checkbox("Freeze Cull Frustum", &_freezeCull);
+                ImGui::Checkbox("ShowAABB", &_ShowAABB);
+            }
             if (ImGui::CollapsingHeader("Background Effect")) {
                 ImGui::Text("Selected: %s", selected.name);
                 ImGui::SliderInt("Effect Index", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);
