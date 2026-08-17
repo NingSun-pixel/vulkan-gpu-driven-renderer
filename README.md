@@ -90,7 +90,7 @@ The takeaway isn't one "X% faster" number — it's knowing **where** the time go
 <!-- TODO: profiler HUD screenshot (gpu_ms + cpu_ms line graph) at docs/profiler.png -->
 <!-- ![Profiler HUD](docs/profiler.png) -->
 
-## Build
+## Build & Run
 
 Windows / Visual Studio, Vulkan SDK 1.3+ required.
 
@@ -98,10 +98,34 @@ Windows / Visual Studio, Vulkan SDK 1.3+ required.
 git clone https://github.com/NingSun-pixel/vulkan-gpu-driven-renderer.git
 cd vulkan-gpu-driven-renderer
 cmake -B Build
-cmake --build Build
+cmake --build Build --config Release
 ```
 
-<!-- TODO: adjust repo name above if you named it differently; add any SDK/env notes -->
+Asset and shader paths are resolved relative to the executable, so **run from the build output folder**:
+
+```bash
+cd bin/Release        # or bin/Debug
+./engine
+```
+
+## Controls & UI
+
+**WASD + mouse** to fly the camera. Three ImGui panels are laid out on screen:
+
+- **Top-left — Scene / Debug panel:** rendering options and benchmark controls (see below).
+- **Top-right — Performance HUD:** live GPU/CPU frame time, draw calls and triangle counts (timestamp + pipeline-statistics queries), with a rolling CPU/GPU history graph.
+- **Bottom-left — Camera Path tool:** capture / save / load camera waypoints and replay them at constant speed along a Catmull-Rom spline; includes an *Observe Cull* mode that flies the culling frustum along the recorded path while a free camera watches from the outside.
+
+### Key parameters (top-left panel)
+
+- **ShowAABB** — toggles a wireframe overlay of each object's axis-aligned bounding box and the view frustum, so you can see the volumes the GPU frustum culling actually tests against.
+- **Bench Cfg** — switches the rendering path for A/B benchmarking, to compare CPU vs GPU cost across four configurations:
+  - `naive` — one CPU-submitted draw call per object (no indirect, no culling) — the baseline.
+  - `baseline-noinstance` — GPU-driven indirect draw, one command per object.
+  - `baseline-instance` — GPU-driven indirect with instancing (identical meshes merged).
+  - `instance-gpucull` — instancing **plus** GPU compute frustum culling.
+
+  Each config's per-frame GPU/CPU timings are logged to `paths/bench_<config>.csv`, which drives the shading-bound analysis in the Performance section above.
 
 ## Roadmap
 
