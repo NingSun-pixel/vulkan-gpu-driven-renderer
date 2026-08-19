@@ -263,20 +263,62 @@ void VulkanEngine::draw()
     //make the swapchain image into writeable mode before rendering
     vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
-    //Render
-    draw_background(cmd);
+
 
     //Switch CPU muti thread demo or Cull demo
     switch (CurrentDemo)
     {
     case Demo::CPUMutiThread:
     {
-        vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        const uint32_t W = _drawImage.imageExtent.width;
+        const uint32_t H = _drawImage.imageExtent.height;
+        std::vector<glm::vec4> color(H * W);
+        //Ray tracing
+        for (int i = 0; i < H; i++)
+        {
+            for (int j = 0; j < W; j++)
+            {
+                color[W * i + j] = glm::vec4(0, 1, 1, 1);
+            }
+        }
+
+        // ---- float -> RGBA16F(half),匹配 _drawImage 格式 ----
+        // 每像素 2 个 uint32:低32=RG,高32=BA
+        std::vector<glm::uint> packed(W * H * 2);
+        for (size_t p = 0; p < color.size(); p++) {
+            packed[p * 2 + 0] = glm::packHalf2x16(glm::vec2(color[p].x, color[p].y));
+            packed[p * 2 + 1] = glm::packHalf2x16(glm::vec2(color[p].z, color[p].w));
+        }
+        VkDeviceSize bytes = packed.size() * sizeof(glm::uint);
+
+        AllocatedBuffer staging = create_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        memcpy(staging.info.pMappedData, packed.data(), bytes);
+        get_current_frame()._deletionQueue.push_function([=, this]() { destroy_buffer(staging); });
+
+        vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        VkBufferImageCopy copyRegion = {};
+        copyRegion.bufferOffset = 0;
+        copyRegion.bufferRowLength = 0;
+        copyRegion.bufferImageHeight = 0;
+
+        copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copyRegion.imageSubresource.mipLevel = 0;
+        copyRegion.imageSubresource.baseArrayLayer = 0;
+        copyRegion.imageSubresource.layerCount = 1;
+        copyRegion.imageExtent = VkExtent3D{ _windowExtent.width ,_windowExtent.height ,1};
+
+        // copy the buffer into the image
+        vkCmdCopyBufferToImage(cmd, staging.buffer, _drawImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+            &copyRegion);
+
+        vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
     }
         break;
     case Demo::Cull:
     {
+        //Render
+        draw_background(cmd);
         draw_init();
         if (_benchConfig != 3) draw_Cull(cmd);   // naive:不走 compute(无 indirect、无剔除)
 
@@ -573,3 +615,9 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
     Node::Draw(topMatrix, ctx);
 }
 
+
+glm::vec4 VulkanEngine::Ray::RayFunction(glm::vec4 ori, glm::vec4 dir)
+{
+    glm::vec4 Des = ori + dir;
+    return Des;
+}

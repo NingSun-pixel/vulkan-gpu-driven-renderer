@@ -189,6 +189,9 @@ struct PathPoint { glm::vec3 pos; float yaw, pitch; };
 
 enum class CamMode { Free, Playing, ObserveCull };
 
+struct PointAnimNode{
+
+};
 
 
 
@@ -392,6 +395,18 @@ public:
 	int _stressDup = 1;
 
 	int CurrentDemo = 1;
+
+	//Demo 0: CPU-Mutithread Ray tracing
+	class Ray {
+		public:
+			glm::vec4 Direction;
+			glm::vec4 Origin;
+			glm::vec4 RayFunction(glm::vec4 ori, glm::vec4 dir);
+		private:
+			
+		 
+	};
+
 private:
 	void init_descriptors();
 	void init_pipelines();
