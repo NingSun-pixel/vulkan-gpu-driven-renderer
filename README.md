@@ -140,7 +140,21 @@ Honest next steps, roughly in order:
 
 ## Credits
 
-Bootstrapped from the excellent [vkguide.dev](https://vkguide.dev) base by [vblanco20-1](https://github.com/vblanco20-1/vulkan-guide) (MIT). The **GPU-driven culling pipeline, the compute/indirect architecture, the custom GPU profiler, and the culling debug visualization are my own work** built on top of that starting point.
+Started from the [vkguide.dev](https://vkguide.dev) tutorial by
+[vblanco20-1](https://github.com/vblanco20-1/vulkan-guide) (MIT). I followed the
+guide for the foundational Vulkan layer: instance/device/swapchain setup,
+command-buffer and synchronization2 plumbing, the descriptor and
+pipeline-builder abstractions, VMA integration, and the initial glTF loading.
+
+Built on top of that foundation, the following are my own work:
+
+- **GPU-driven culling pipeline** — compute frustum culling writing `instanceCount`
+  into the indirect buffer, with zero CPU readback
+- **`atomicAdd` instance compaction** + the mega-index-buffer / per-mesh BDA draw path
+- **In-engine GPU profiler** — timestamp + pipeline-statistics queries with a live HUD
+- **Camera-path tool** — Catmull-Rom spline with arc-length reparameterization, plus
+  the benchmark harness and analysis script
+- **Culling debug visualization** — frozen frustum + green/red AABB overlay
 
 ## About
 
