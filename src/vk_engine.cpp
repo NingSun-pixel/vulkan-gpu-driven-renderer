@@ -273,14 +273,36 @@ void VulkanEngine::draw()
         const uint32_t W = _drawImage.imageExtent.width;
         const uint32_t H = _drawImage.imageExtent.height;
         std::vector<glm::vec4> color(H * W);
+
+        glm::mat4 rot = mainCamera.getRotationMatrix();
+        glm::vec3 rayCenter = mainCamera.position;
+        glm::vec4 xAxis = glm::vec4(1, 0, 0, 0);
+        glm::vec4 yAxis = glm::vec4(0, 1, 0, 0);
+        glm::vec4 zAxis = glm::vec4(0, 0, 1, 0);
+
+        glm::vec3 xAxisCameraWorld = glm::normalize(rot * xAxis);
+        glm::vec3 yAxisCameraWorld = glm::normalize(rot * yAxis);
+        glm::vec3 zAxisCameraWorld = glm::normalize(rot * zAxis);
         //Ray tracing
-        for (int i = 0; i < H; i++)
-        {
-            for (int j = 0; j < W; j++)
-            {
-                color[W * i + j] = glm::vec4(0, 1, 1, 1);
+        const int N = 1;   
+
+        for (int i = 0; i < (int)H; i += N) {
+            for (int j = 0; j < (int)W; j += N) {
+                float v = float(i) / H - 0.5f;
+                float u = float(j) / W - 0.5f;
+                // y 1 z aspect x 1
+                float aspect = float(H) / float(W);
+                glm::vec3 rayDirection =
+                    yAxisCameraWorld - zAxisCameraWorld * v * aspect + xAxisCameraWorld * u ;
+                Ray ray(rayCenter, rayDirection);
+                glm::vec4 c = glm::vec4(RayColor(ray), 1);
+
+                for (int dy = 0; dy < N && i + dy < (int)H; dy++)
+                    for (int dx = 0; dx < N && j + dx < (int)W; dx++)
+                        color[W * (i + dy) + (j + dx)] = c;
             }
         }
+
 
         // ---- float -> RGBA16F(half),匹配 _drawImage 格式 ----
         // 每像素 2 个 uint32:低32=RG,高32=BA
@@ -292,7 +314,7 @@ void VulkanEngine::draw()
         VkDeviceSize bytes = packed.size() * sizeof(glm::uint);
 
         AllocatedBuffer staging = create_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-        memcpy(staging.info.pMappedData, packed.data(), bytes);
+        memcpy(staging.info.pMappedData, packed.data(), bytes); 
         get_current_frame()._deletionQueue.push_function([=, this]() { destroy_buffer(staging); });
 
         vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -588,6 +610,31 @@ void VulkanEngine::run()
     }
 }
 
+glm::vec3 VulkanEngine::RayColor(Ray r)
+{
+    glm::vec3 dirN = glm::normalize(r.dir);
+    float colory = (dirN.y + 1.0f)/2.0f;
+    float circleRadius = 10.0f;
+    glm::vec3 circleCenterPos = glm::vec3(0, 10, 0);
+    if (CircleHit(circleCenterPos, circleRadius, r))
+    {
+        return glm::vec3(0.5, 0.5, 0.5);
+    }
+    else {
+        return glm::vec3((1.0f - colory) * glm::vec3(1.0, 1.0, 1.0) + colory * glm::vec3(0.5, 0.7, 1.0));
+    }
+}
+
+//return if hit
+bool VulkanEngine::CircleHit(glm::vec3 circleCenter,float radius,Ray& r)
+{
+    glm::vec3 oc = circleCenter - r.origin;
+    float a = glm::dot(r.dir, r.dir);
+    float b = -2.0f * glm::dot(r.dir, oc);
+    float c = glm::dot(oc, oc) - radius * radius;
+    return (b * b - 4 * a * c >= 0);
+}
+
 
 void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
 {
@@ -615,9 +662,3 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
     Node::Draw(topMatrix, ctx);
 }
 
-
-glm::vec4 VulkanEngine::Ray::RayFunction(glm::vec4 ori, glm::vec4 dir)
-{
-    glm::vec4 Des = ori + dir;
-    return Des;
-}

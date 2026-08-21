@@ -394,18 +394,19 @@ public:
 	void dumpBenchmark();
 	int _stressDup = 1;
 
-	int CurrentDemo = 1;
+	int CurrentDemo = 0;
 
 	//Demo 0: CPU-Mutithread Ray tracing
 	class Ray {
 		public:
-			glm::vec4 Direction;
-			glm::vec4 Origin;
-			glm::vec4 RayFunction(glm::vec4 ori, glm::vec4 dir);
+			glm::vec3 dir;
+			glm::vec3 origin;
+			Ray(glm::vec3 o, glm::vec3 d) : origin(o), dir(d) {}
 		private:
-			
-		 
 	};
+	glm::vec3 RayColor(Ray r);
+	bool CircleHit(glm::vec3 circleCenter, float radius, Ray& r);
+
 
 private:
 	void init_descriptors();
