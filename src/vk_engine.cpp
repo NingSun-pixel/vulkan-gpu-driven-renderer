@@ -293,7 +293,7 @@ void VulkanEngine::draw()
                 // y 1 z aspect x 1
                 float aspect = float(H) / float(W);
                 glm::vec3 rayDirection =
-                    yAxisCameraWorld - zAxisCameraWorld * v * aspect + xAxisCameraWorld * u ;
+                    zAxisCameraWorld - yAxisCameraWorld * v * aspect + xAxisCameraWorld * u ;
                 Ray ray(rayCenter, rayDirection);
                 glm::vec4 c = glm::vec4(RayColor(ray), 1);
 
@@ -615,7 +615,7 @@ glm::vec3 VulkanEngine::RayColor(Ray r)
     glm::vec3 dirN = glm::normalize(r.dir);
     float colory = (dirN.y + 1.0f)/2.0f;
     float circleRadius = 10.0f;
-    glm::vec3 circleCenterPos = glm::vec3(0, 10, 0);
+    glm::vec3 circleCenterPos = glm::vec3(30, 0, 10);
     if (CircleHit(circleCenterPos, circleRadius, r))
     {
         return glm::vec3(0.5, 0.5, 0.5);
