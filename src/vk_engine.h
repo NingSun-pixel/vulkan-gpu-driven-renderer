@@ -394,7 +394,7 @@ public:
 	void dumpBenchmark();
 	int _stressDup = 1;
 
-	int CurrentDemo = 1;
+	int CurrentDemo = 0;
 
 	//Demo 0: CPU-Mutithread Ray tracing
 	class Ray {
