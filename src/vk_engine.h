@@ -402,10 +402,11 @@ public:
 			glm::vec3 dir;
 			glm::vec3 origin;
 			Ray(glm::vec3 o, glm::vec3 d) : origin(o), dir(d) {}
+			glm::vec3 at(float t);
 		private:
 	};
 	glm::vec3 RayColor(Ray r);
-	bool CircleHit(glm::vec3 circleCenter, float radius, Ray& r);
+	float CircleHit(glm::vec3 circleCenter, float radius, Ray& r);
 
 
 private:

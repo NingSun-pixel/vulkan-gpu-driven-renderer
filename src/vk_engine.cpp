@@ -616,9 +616,12 @@ glm::vec3 VulkanEngine::RayColor(Ray r)
     float colory = (dirN.y + 1.0f)/2.0f;
     float circleRadius = 10.0f;
     glm::vec3 circleCenterPos = glm::vec3(30, 0, 10);
-    if (CircleHit(circleCenterPos, circleRadius, r))
+    float t = CircleHit(circleCenterPos, circleRadius, r);
+    if (t >= 0)
     {
-        return glm::vec3(0.5, 0.5, 0.5);
+        //return glm::vec3(0.5,0.5,0.5);
+        glm::vec3 N = (r.at(t) - circleCenterPos)/ circleRadius;
+        return 0.5f * glm::vec3(N.x + 1, N.y + 1, N.z + 1);
     }
     else {
         return glm::vec3((1.0f - colory) * glm::vec3(1.0, 1.0, 1.0) + colory * glm::vec3(0.5, 0.7, 1.0));
@@ -626,15 +629,26 @@ glm::vec3 VulkanEngine::RayColor(Ray r)
 }
 
 //return if hit
-bool VulkanEngine::CircleHit(glm::vec3 circleCenter,float radius,Ray& r)
+float VulkanEngine::CircleHit(glm::vec3 circleCenter,float radius,Ray& r)
 {
     glm::vec3 oc = circleCenter - r.origin;
     float a = glm::dot(r.dir, r.dir);
     float b = -2.0f * glm::dot(r.dir, oc);
     float c = glm::dot(oc, oc) - radius * radius;
-    return (b * b - 4 * a * c >= 0);
+    float discriminant = b* b - 4 * a * c;
+    if (b * b - 4 * a * c >= 0)
+    {
+        return (-b + std::sqrt(discriminant)) / (2.0 * a);
+    }
+    else {
+        return -1;
+    }
 }
 
+glm::vec3 VulkanEngine::Ray::at(float t)
+{
+    return origin + dir * t;
+}
 
 void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
 {
