@@ -22,6 +22,8 @@ add_executable (engine
   vk_loader.cpp
   camera.cpp
   camera.h
+  rayTracing.h
+  rayTracing.cpp
 )
 
 set_property(TARGET engine PROPERTY CXX_STANDARD 20)

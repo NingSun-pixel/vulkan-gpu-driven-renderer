@@ -633,22 +633,19 @@ float VulkanEngine::CircleHit(glm::vec3 circleCenter,float radius,Ray& r)
 {
     glm::vec3 oc = circleCenter - r.origin;
     float a = glm::dot(r.dir, r.dir);
-    float b = -2.0f * glm::dot(r.dir, oc);
+    float h = glm::dot(r.dir, oc);
     float c = glm::dot(oc, oc) - radius * radius;
-    float discriminant = b* b - 4 * a * c;
-    if (b * b - 4 * a * c >= 0)
+    float discriminant = h * h - a * c;
+    if (discriminant >= 0)
     {
-        return (-b + std::sqrt(discriminant)) / (2.0 * a);
+        return (h - std::sqrt(discriminant)) / a;
     }
     else {
         return -1;
     }
 }
 
-glm::vec3 VulkanEngine::Ray::at(float t)
-{
-    return origin + dir * t;
-}
+
 
 void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
 {

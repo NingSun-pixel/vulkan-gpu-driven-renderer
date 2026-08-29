@@ -7,6 +7,7 @@
 #include <vk_descriptors.h>
 #include <vk_loader.h>
 #include <camera.h>
+#include <rayTracing.h>
 
 struct ComputePushConstants {
 	glm::vec4 data1;
@@ -396,17 +397,10 @@ public:
 
 	int CurrentDemo = 0;
 
-	//Demo 0: CPU-Mutithread Ray tracing
-	class Ray {
-		public:
-			glm::vec3 dir;
-			glm::vec3 origin;
-			Ray(glm::vec3 o, glm::vec3 d) : origin(o), dir(d) {}
-			glm::vec3 at(float t);
-		private:
-	};
+
 	glm::vec3 RayColor(Ray r);
 	float CircleHit(glm::vec3 circleCenter, float radius, Ray& r);
+
 
 
 private:
