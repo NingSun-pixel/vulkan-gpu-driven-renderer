@@ -283,10 +283,13 @@ void VulkanEngine::draw()
         glm::vec3 xAxisCameraWorld = glm::normalize(rot * xAxis);
         glm::vec3 yAxisCameraWorld = glm::normalize(rot * yAxis);
         glm::vec3 zAxisCameraWorld = glm::normalize(rot * zAxis);
-        //Ray tracing
-        const int N = 1;   
-        hittable_list world;
+        //Ray tracing 
+        const int N = mainCamera.N;
+        int samples_per_pixel = mainCamera.samples_per_pixel;
+        float pixel_samples_scale = 1 / float(mainCamera.samples_per_pixel);
+        float aspect = float(H) / float(W);
 
+        hittable_list world;
         world.add(make_shared<sphere>(glm::vec3(30, 0, 10),10));
         world.add(make_shared<sphere>(glm::vec3(30, -100, 10), 90.5));
 
@@ -296,15 +299,24 @@ void VulkanEngine::draw()
                 float v = float(i) / H - 0.5f;
                 float u = float(j) / W - 0.5f;
                 // y 1 z aspect x 1
-                float aspect = float(H) / float(W);
-                glm::vec3 rayDirection =
-                    zAxisCameraWorld - yAxisCameraWorld * v * aspect + xAxisCameraWorld * u ;
-                Ray ray(rayCenter, rayDirection);
-                glm::vec4 c = glm::vec4(RayColor(ray, world), 1);
 
+                glm::vec3 pixel_color = glm::vec3(0, 0, 0);
+                for(int k = 0; k < samples_per_pixel;k++)
+                {
+                    float v_pixel = v + (float(random_double()) - 0.5) / H;
+                    float u_pixel = u + (float(random_double()) - 0.5) / W;
+
+                    glm::vec3 rayDirection =
+                        zAxisCameraWorld - yAxisCameraWorld * v_pixel * aspect + xAxisCameraWorld * u_pixel;
+
+                    Ray ray(rayCenter, rayDirection);
+                    glm::vec3 ray_Color = RayColor(ray, world)* pixel_samples_scale;
+                    pixel_color += ray_Color;
+                }
                 for (int dy = 0; dy < N && i + dy < (int)H; dy++)
                     for (int dx = 0; dx < N && j + dx < (int)W; dx++)
-                        color[W * (i + dy) + (j + dx)] = c;
+                        color[W * (i + dy) + (j + dx)] = glm::vec4(pixel_color,1);
+
             }
         }
 
@@ -615,6 +627,8 @@ void VulkanEngine::run()
     }
 }
 
+
+
 glm::vec3 VulkanEngine::RayColor(Ray r,const hittable& world)
 {
     hit_record rec;
@@ -625,40 +639,7 @@ glm::vec3 VulkanEngine::RayColor(Ray r,const hittable& world)
     glm::vec3 unit_direction = glm::normalize(r.dir);
     auto a = 0.5 * (unit_direction.y + 1.0);
     return glm::vec3(1.0 - a) * glm::vec3(1.0, 1.0, 1.0) + glm::vec3(a) * glm::vec3(0.5, 0.7, 1.0);
-
-
-    //glm::vec3 dirN = glm::normalize(r.dir);
-    //float colory = (dirN.y + 1.0f)/2.0f;
-    //float circleRadius = 10.0f;
-    //glm::vec3 circleCenterPos = glm::vec3(30, 0, 10);
-    //float t = CircleHit(circleCenterPos, circleRadius, r);
-    //if (t >= 0)
-    //{
-    //    glm::vec3 N = (r.at(t) - circleCenterPos)/ circleRadius;
-    //    return 0.5f * glm::vec3(N.x + 1, N.y + 1, N.z + 1);
-    //}
-    //else {
-    //    return glm::vec3((1.0f - colory) * glm::vec3(1.0, 1.0, 1.0) + colory * glm::vec3(0.5, 0.7, 1.0));
-    //}
 }
-
-//return if hit
-float VulkanEngine::CircleHit(glm::vec3 circleCenter,float radius,Ray& r)
-{
-    glm::vec3 oc = circleCenter - r.origin;
-    float a = glm::dot(r.dir, r.dir);
-    float h = glm::dot(r.dir, oc);
-    float c = glm::dot(oc, oc) - radius * radius;
-    float discriminant = h * h - a * c;
-    if (discriminant >= 0)
-    {
-        return (h - std::sqrt(discriminant)) / a;
-    }
-    else {
-        return -1;
-    }
-}
-
 
 
 void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)

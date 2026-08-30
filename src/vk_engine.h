@@ -399,8 +399,6 @@ public:
 
 
 	glm::vec3 RayColor(Ray r, const hittable& world);
-	float CircleHit(glm::vec3 circleCenter, float radius, Ray& r);
-
 
 
 private:

@@ -5,6 +5,13 @@ class Camera {
 public:
     glm::vec3 velocity;
     glm::vec3 position;
+
+    //Ray tracing parameters
+    int samples_per_pixel = 1;
+    const int N = 1;
+
+
+
     // vertical rotation
     float pitch{ 0.f };
     // horizontal rotation
