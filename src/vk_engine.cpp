@@ -285,6 +285,11 @@ void VulkanEngine::draw()
         glm::vec3 zAxisCameraWorld = glm::normalize(rot * zAxis);
         //Ray tracing
         const int N = 1;   
+        hittable_list world;
+
+        world.add(make_shared<sphere>(glm::vec3(30, 0, 10),10));
+        world.add(make_shared<sphere>(glm::vec3(30, -100, 10), 90.5));
+
 
         for (int i = 0; i < (int)H; i += N) {
             for (int j = 0; j < (int)W; j += N) {
@@ -295,7 +300,7 @@ void VulkanEngine::draw()
                 glm::vec3 rayDirection =
                     zAxisCameraWorld - yAxisCameraWorld * v * aspect + xAxisCameraWorld * u ;
                 Ray ray(rayCenter, rayDirection);
-                glm::vec4 c = glm::vec4(RayColor(ray), 1);
+                glm::vec4 c = glm::vec4(RayColor(ray, world), 1);
 
                 for (int dy = 0; dy < N && i + dy < (int)H; dy++)
                     for (int dx = 0; dx < N && j + dx < (int)W; dx++)
@@ -610,22 +615,31 @@ void VulkanEngine::run()
     }
 }
 
-glm::vec3 VulkanEngine::RayColor(Ray r)
+glm::vec3 VulkanEngine::RayColor(Ray r,const hittable& world)
 {
-    glm::vec3 dirN = glm::normalize(r.dir);
-    float colory = (dirN.y + 1.0f)/2.0f;
-    float circleRadius = 10.0f;
-    glm::vec3 circleCenterPos = glm::vec3(30, 0, 10);
-    float t = CircleHit(circleCenterPos, circleRadius, r);
-    if (t >= 0)
-    {
-        //return glm::vec3(0.5,0.5,0.5);
-        glm::vec3 N = (r.at(t) - circleCenterPos)/ circleRadius;
-        return 0.5f * glm::vec3(N.x + 1, N.y + 1, N.z + 1);
+    hit_record rec;
+    if (world.hit(r, 0, infinity, rec)) {
+        return glm::vec3(0.5) * (rec.normal + glm::vec3(1, 1, 1));
     }
-    else {
-        return glm::vec3((1.0f - colory) * glm::vec3(1.0, 1.0, 1.0) + colory * glm::vec3(0.5, 0.7, 1.0));
-    }
+
+    glm::vec3 unit_direction = glm::normalize(r.dir);
+    auto a = 0.5 * (unit_direction.y + 1.0);
+    return glm::vec3(1.0 - a) * glm::vec3(1.0, 1.0, 1.0) + glm::vec3(a) * glm::vec3(0.5, 0.7, 1.0);
+
+
+    //glm::vec3 dirN = glm::normalize(r.dir);
+    //float colory = (dirN.y + 1.0f)/2.0f;
+    //float circleRadius = 10.0f;
+    //glm::vec3 circleCenterPos = glm::vec3(30, 0, 10);
+    //float t = CircleHit(circleCenterPos, circleRadius, r);
+    //if (t >= 0)
+    //{
+    //    glm::vec3 N = (r.at(t) - circleCenterPos)/ circleRadius;
+    //    return 0.5f * glm::vec3(N.x + 1, N.y + 1, N.z + 1);
+    //}
+    //else {
+    //    return glm::vec3((1.0f - colory) * glm::vec3(1.0, 1.0, 1.0) + colory * glm::vec3(0.5, 0.7, 1.0));
+    //}
 }
 
 //return if hit

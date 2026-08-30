@@ -398,7 +398,7 @@ public:
 	int CurrentDemo = 0;
 
 
-	glm::vec3 RayColor(Ray r);
+	glm::vec3 RayColor(Ray r, const hittable& world);
 	float CircleHit(glm::vec3 circleCenter, float radius, Ray& r);
 
 
